@@ -53,6 +53,7 @@ const (
 	MetaDelete
 	MetaBackspace
 	MetaTranspose
+	MetaShiftTab
 )
 
 // WaitForResume need to call before current process got suspend.
@@ -102,6 +103,8 @@ func IsPrintable(key rune) bool {
 func escapeExKey(key *escapeKeyPair) rune {
 	var r rune
 	switch key.typ {
+	case 'Z':
+		r = MetaShiftTab
 	case 'D':
 		r = CharBackward
 	case 'C':
