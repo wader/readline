@@ -288,6 +288,13 @@ func (o *Operation) ioloop() {
 				o.t.Bell()
 			}
 		case CharDelete:
+			o.t.KickRead()
+			if o.buf.Len() > 0 || !o.IsNormalMode() {
+				if !o.buf.Delete() {
+					o.t.Bell()
+				}
+			}
+		case CharEOT:
 			if o.buf.Len() > 0 || !o.IsNormalMode() {
 				o.t.KickRead()
 				if !o.buf.Delete() {
