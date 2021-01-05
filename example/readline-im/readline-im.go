@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"time"
 
-	"github.com/chzyer/readline"
+	"github.com/goinsane/readline"
 )
-import "log"
 
 func main() {
 	rl, err := readline.NewEx(&readline.Config{
