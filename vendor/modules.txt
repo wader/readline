@@ -1,0 +1,7 @@
+# github.com/chzyer/logex v1.1.10
+github.com/chzyer/logex
+# github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1
+github.com/chzyer/test
+# golang.org/x/sys v0.0.0-20210104204734-6f8348627aad
+golang.org/x/sys/internal/unsafeheader
+golang.org/x/sys/unix
