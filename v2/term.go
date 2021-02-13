@@ -12,9 +12,27 @@ type State struct {
 	termios Termios
 }
 
+// Duplicate duplicates the underlying State.
 func (s *State) Duplicate() *State {
 	r := *s
 	return &r
+}
+
+// GetState returns the current state of a terminal which may be useful to
+// restore the terminal after a signal.
+func GetState(fd uintptr) (*State, error) {
+	termios, err := getTermios(fd)
+	err = correctErrNo0(err)
+	if err != nil {
+		return nil, err
+	}
+	return &State{termios: *termios}, nil
+}
+
+// RestoreState restores the terminal connected to the given file descriptor to a
+// given state.
+func RestoreState(fd uintptr, state *State) error {
+	return correctErrNo0(setTermios(fd, &state.termios))
 }
 
 // IsTerminal returns true if the given file descriptor is a terminal.
@@ -23,10 +41,10 @@ func IsTerminal(fd uintptr) bool {
 	return err == nil
 }
 
-// MakeRaw put the terminal connected to the given file descriptor into raw
+// SetRawMode put the terminal connected to the given file descriptor into raw
 // mode and returns the previous state of the terminal so that it can be
 // restored.
-func MakeRaw(fd uintptr) (*State, error) {
+func SetRawMode(fd uintptr) (*State, error) {
 	oldState, err := GetState(fd)
 	if err != nil {
 		return nil, err
@@ -44,30 +62,13 @@ func MakeRaw(fd uintptr) (*State, error) {
 	newState.termios.Cc[syscall.VMIN] = 1
 	newState.termios.Cc[syscall.VTIME] = 0
 
-	return oldState, SetState(fd, newState)
+	return oldState, RestoreState(fd, newState)
 }
 
-// GetState returns the current state of a terminal which may be useful to
-// restore the terminal after a signal.
-func GetState(fd uintptr) (*State, error) {
-	termios, err := getTermios(fd)
-	err = correctErrNo0(err)
-	if err != nil {
-		return nil, err
-	}
-	return &State{termios: *termios}, nil
-}
-
-// SetState sets the terminal connected to the given file descriptor to a
-// given state.
-func SetState(fd uintptr, state *State) error {
-	return correctErrNo0(setTermios(fd, &state.termios))
-}
-
-// ReadPassword reads a line of input from a terminal without local echo.  This
-// is commonly used for inputting passwords and other sensitive data. The slice
-// returned does not include the \n.
-func ReadPassword(fd uintptr) ([]byte, error) {
+// SetPasswordMode put the terminal connected to the given file descriptor into password
+// mode and returns the previous state of the terminal so that it can be
+// restored.
+func SetPasswordMode(fd uintptr) (*State, error) {
 	oldState, err := GetState(fd)
 	if err != nil {
 		return nil, err
@@ -79,12 +80,19 @@ func ReadPassword(fd uintptr) ([]byte, error) {
 	newState.termios.Lflag &^= syscall.ECHO | syscall.ECHONL | syscall.ISIG
 	newState.termios.Lflag |= syscall.ICANON // | syscall.ISIG
 
-	err = SetState(fd, newState)
+	return oldState, RestoreState(fd, newState)
+}
+
+// ReadPassword reads a line of input from a terminal without local echo.  This
+// is commonly used for inputting passwords and other sensitive data. The slice
+// returned does not include the \n.
+func ReadPassword(fd uintptr) ([]byte, error) {
+	oldState, err := SetPasswordMode(fd)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		_ = SetState(fd, oldState)
+		_ = RestoreState(fd, oldState)
 	}()
 
 	var buf [16]byte

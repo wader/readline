@@ -8,11 +8,11 @@ import (
 )
 
 func main() {
-	//stIn, _ := readline.MakeRaw(os.Stdin.Fd())
-	//defer readline.SetState(os.Stdin.Fd(), stIn)
+	//stIn, _ := readline.SetRawMode(os.Stdin.Fd())
+	//defer readline.RestoreState(os.Stdin.Fd(), stIn)
 
-	//stOut, _ := readline.MakeRaw(os.Stdin.Fd())
-	//defer readline.SetState(os.Stdout.Fd(), stOut)
+	//stOut, _ := readline.SetRawMode(os.Stdin.Fd())
+	//defer readline.RestoreState(os.Stdout.Fd(), stOut)
 
 	a, _ := readline.ReadPassword(os.Stdin.Fd())
 	fmt.Println(string(a))
