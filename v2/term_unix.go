@@ -131,6 +131,15 @@ func IsScreenTerminal() bool {
 	return IsTerminal(syscall.Stdin) && (IsTerminal(syscall.Stdout) || IsTerminal(syscall.Stderr))
 }
 
+// GetScreenSize gets size of the current screen.
+func GetScreenSize() (int, int, error) {
+	cols, rows, err := GetSize(syscall.Stdout)
+	if err != nil {
+		cols, rows, err = GetSize(syscall.Stderr)
+	}
+	return cols, rows, err
+}
+
 // GetWidth gets width of the given file descriptor. If error occurs, it returns -1.
 func GetWidth(stdoutFd int) int {
 	cols, _, err := GetSize(stdoutFd)

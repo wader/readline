@@ -1,12 +1,24 @@
 package readline
 
 import (
-	"io"
+	"os"
 )
 
 type Config struct {
 	// prompt supports ANSI escape sequence, so we can color some characters
 	Prompt string
+
+	InterruptPrompt string
+	EOFPrompt       string
+
+	Stdin  *os.File
+	Stdout *os.File
+	Stderr *os.File
+
+	EnableMask bool
+	MaskRune   rune
+
+	ForceUseInteractive bool
 
 	// readline will persist historys to file where HistoryFile specified
 	HistoryFile string
@@ -19,21 +31,7 @@ type Config struct {
 	// AutoCompleter will called once user press TAB
 	//AutoComplete AutoCompleter
 
-	InterruptPrompt string
-	EOFPrompt       string
-
-	Stdin       io.ReadCloser
-	StdinWriter io.Writer
-	Stdout      io.Writer
-	Stderr      io.Writer
-
-	//?
-	EnableMask bool
-	MaskRune   rune
-
 	// filter input runes (may be used to disable CtrlZ or for translating some keys to different actions)
 	// -> output = new (translated) rune and true/false if continue with processing this one
 	FuncFilterInputRune func(rune) (rune, bool)
-
-	ForceUseInteractive bool
 }
