@@ -9,17 +9,17 @@ import (
 
 type Termios syscall.Termios
 
-func getTermios(fd uintptr) (*Termios, error) {
+func getTermios(fd int) (*Termios, error) {
 	termios := new(Termios)
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, fd, syscall.TIOCGETA, uintptr(unsafe.Pointer(termios)), 0, 0, 0)
+	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), syscall.TIOCGETA, uintptr(unsafe.Pointer(termios)), 0, 0, 0)
 	if err != 0 {
 		return nil, err
 	}
 	return termios, nil
 }
 
-func setTermios(fd uintptr, termios *Termios) error {
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, fd, syscall.TIOCSETA, uintptr(unsafe.Pointer(termios)), 0, 0, 0)
+func setTermios(fd int, termios *Termios) error {
+	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), syscall.TIOCSETA, uintptr(unsafe.Pointer(termios)), 0, 0, 0)
 	if err != 0 {
 		return err
 	}
@@ -27,9 +27,9 @@ func setTermios(fd uintptr, termios *Termios) error {
 }
 
 // GetSize returns the dimensions of the given terminal.
-func GetSize(fd uintptr) (int, int, error) {
+func GetSize(stdoutFd int) (int, int, error) {
 	var dimensions [4]uint16
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&dimensions)), 0, 0, 0)
+	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(stdoutFd), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&dimensions)), 0, 0, 0)
 	if err != 0 {
 		return 0, 0, err
 	}
