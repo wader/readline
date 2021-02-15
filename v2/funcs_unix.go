@@ -12,7 +12,7 @@ import (
 // For Linux it need to send to myself
 func SuspendMe() {
 	p, _ := os.FindProcess(os.Getppid())
-	p.Signal(syscall.SIGTSTP)
+	_ = p.Signal(syscall.SIGTSTP)
 	p, _ = os.FindProcess(os.Getpid())
-	p.Signal(syscall.SIGTSTP)
+	_ = p.Signal(syscall.SIGTSTP)
 }
