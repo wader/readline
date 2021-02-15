@@ -33,6 +33,7 @@ const (
 	CharKill  = CharCtrlK
 
 	CharCtrlL = 0x0C
+	CharClear = CharCtrlL
 
 	CharCtrlM = 0x0D
 	CharEnter = CharCtrlM
@@ -68,7 +69,7 @@ const (
 
 	CharCtrlZ = 0x1A
 
-	CharEsc = 0x1B
+	CharEscape = 0x1B
 
 	CharEscapeEx = 0x5B
 
