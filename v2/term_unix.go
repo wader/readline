@@ -6,11 +6,46 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"sync"
-	"sync/atomic"
 	"syscall"
-	"unsafe"
 )
+
+var (
+	screenBrokenPipeCh = make(chan struct{}, 1)
+	screenSizeChangedCh = make(chan struct{}, 1)
+)
+
+func init() {
+	initScreenBrokenPipe()
+	initScreenSizeChanged()
+}
+
+func initScreenBrokenPipe() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGPIPE)
+	go func() {
+		for range ch {
+			if checkScreenBrokenPipe() {
+				select {
+				case screenBrokenPipeCh<-struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+}
+
+func initScreenSizeChanged() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGWINCH)
+	go func() {
+		for range ch {
+			select {
+			case screenSizeChangedCh<-struct{}{}:
+			default:
+			}
+		}
+	}()
+}
 
 // State contains the state of a terminal.
 type State struct {
@@ -126,57 +161,7 @@ func IsTerminal(fd int) bool {
 	return err == nil
 }
 
-// IsScreenTerminal returns true if the current screen is a terminal.
-func IsScreenTerminal() bool {
-	return IsTerminal(syscall.Stdin) && (IsTerminal(syscall.Stdout) || IsTerminal(syscall.Stderr))
-}
-
-// GetScreenSize gets size of the current screen.
-func GetScreenSize() (int, int, error) {
-	cols, rows, err := GetSize(syscall.Stdout)
-	if err != nil {
-		cols, rows, err = GetSize(syscall.Stderr)
-	}
-	return cols, rows, err
-}
-
-// GetWidth gets width of the given file descriptor. If error occurs, it returns -1.
-func GetWidth(stdoutFd int) int {
-	cols, _, err := GetSize(stdoutFd)
-	if err != nil {
-		return -1
-	}
-	return cols
-}
-
-// GetScreenWidth gets width of the current screen. If error occurs, it returns -1.
-func GetScreenWidth() int {
-	w := GetWidth(syscall.Stdout)
-	if w < 0 {
-		w = GetWidth(syscall.Stderr)
-	}
-	return w
-}
-
-// GetHeight gets height of the given file descriptor. If error occurs, it returns -1.
-func GetHeight(stdoutFd int) int {
-	_, rows, err := GetSize(stdoutFd)
-	if err != nil {
-		return -1
-	}
-	return rows
-}
-
-// GetScreenHeight gets height of the current screen. If error occurs, it returns -1.
-func GetScreenHeight() int {
-	h := GetHeight(syscall.Stdout)
-	if h < 0 {
-		h = GetHeight(syscall.Stderr)
-	}
-	return h
-}
-
-var (
+/*var (
 	onScreenWidthChangedOnce     sync.Once
 	onScreenWidthChangedCallback *func()
 )
@@ -199,4 +184,4 @@ func OnScreenWidthChanged(callback func()) (oldCallback func()) {
 		}()
 	})
 	return oldCallback
-}
+}*/
