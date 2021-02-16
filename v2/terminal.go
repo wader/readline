@@ -50,7 +50,11 @@ func NewTerminal(config Config) (*Terminal, error) {
 		screenSizeChangedCh: make(chan struct{}, 1),
 		lineResultCh:        make(chan lineResult, 1),
 	}
-	t.rb = runeutil.NewRuneBuffer(config.Stdout, config.Prompt, config.Mask, config.ForceUseInteractive, GetWidth(t.stdout))
+	interactive := IsTerminal(t.stdin)
+	if config.ForceUseInteractive {
+		interactive = true
+	}
+	t.rb = runeutil.NewRuneBuffer(config.Stdout, config.Prompt, config.Mask, interactive, GetWidth(t.stdout))
 	t.stdinReader, t.stdinWriter = newExtendedStdin(config.Stdin)
 	t.ctx, t.ctxCancel = context.WithCancel(context.Background())
 	RegisterOnScreenBrokenPipe(t.screenBrokenPipeCh)
@@ -156,11 +160,11 @@ func (t *Terminal) GetHeight() int {
 	return h
 }
 
-func (t *Terminal) ReadSlice() ([]byte, error) {
-	return t.ReadSliceContext(context.Background())
+func (t *Terminal) ReadBytes() ([]byte, error) {
+	return t.ReadBytesContext(context.Background())
 }
 
-func (t *Terminal) ReadSliceContext(ctx context.Context) (line []byte, err error) {
+func (t *Terminal) ReadBytesContext(ctx context.Context) (line []byte, err error) {
 	t.mu.Lock()
 	err = t.ioErr
 	t.mu.Unlock()
@@ -187,30 +191,6 @@ func (t *Terminal) ReadSliceContext(ctx context.Context) (line []byte, err error
 
 func (t *Terminal) ioloop() {
 	defer t.wg.Done()
-
-	sendLineResult := func(line []byte, err error) {
-		r := lineResult{
-			Line: make([]byte, len(line)),
-			Err:  err,
-		}
-		copy(r.Line, line)
-		select {
-		case t.lineResultCh <- r:
-		default:
-		}
-	}
-
-	lineBuf := make([]byte, 0, 1024)
-	appendLineBuf := func(p []byte) {
-		bufSize := len(lineBuf)
-		newBufSize := bufSize + len(p)
-		if cap(lineBuf) < newBufSize {
-			newBuf := make([]byte, bufSize, 2*newBufSize)
-			copy(newBuf, lineBuf)
-			lineBuf = newBuf
-		}
-		lineBuf = append(lineBuf, p...)
-	}
 
 	escaped := false
 	escBuf := make([]byte, 0, 16)
@@ -266,6 +246,7 @@ func (t *Terminal) ioloop() {
 		case CharLineStart:
 
 		case CharBackward:
+			t.opBackward()
 
 		case CharInterrupt:
 
@@ -275,6 +256,7 @@ func (t *Terminal) ioloop() {
 		case CharLineEnd:
 
 		case CharForward:
+			t.opForward()
 
 		case CharBell:
 
@@ -283,8 +265,7 @@ func (t *Terminal) ioloop() {
 		case CharTab:
 
 		case CharCtrlJ, CharEnter:
-			t.print('\n')
-			sendLineResult(lineBuf, err)
+			t.opEnter()
 
 		case CharKill:
 
@@ -301,9 +282,7 @@ func (t *Terminal) ioloop() {
 		case CharTranspose:
 
 		default:
-			c := encodeControlChars(p)
-			r, _ := utf8.DecodeRune(c)
-			appendLineBuf(c)
+			r, _ := utf8.DecodeRune(encodeControlChars(p))
 			t.rb.WriteRune(r)
 
 		}
@@ -313,11 +292,22 @@ func (t *Terminal) ioloop() {
 	t.ioErr = err
 	t.mu.Unlock()
 
-	sendLineResult(lineBuf, err)
+	t.sendLineResult(t.rb.Bytes(), err)
 }
 
 func (t *Terminal) escape(escKeyPair *escapeKeyPair) {
 
+}
+
+func (t *Terminal) sendLineResult(line []byte, e error) {
+	r := lineResult{
+		Line: line,
+		Err:  e,
+	}
+	select {
+	case t.lineResultCh <- r:
+	default:
+	}
 }
 
 func (t *Terminal) print(p ...byte) {
@@ -329,7 +319,7 @@ func (t *Terminal) opLineStart() {
 }
 
 func (t *Terminal) opBackward() {
-
+	t.rb.MoveBackward()
 }
 
 func (t *Terminal) opLineEnd() {
@@ -337,7 +327,7 @@ func (t *Terminal) opLineEnd() {
 }
 
 func (t *Terminal) opForward() {
-
+	t.rb.MoveForward()
 }
 
 func (t *Terminal) opBackSpace() {
@@ -346,6 +336,14 @@ func (t *Terminal) opBackSpace() {
 
 func (t *Terminal) opTab() {
 
+}
+
+func (t *Terminal) opEnter() {
+	t.rb.MoveToLineEnd()
+	t.print('\n')
+	t.rb.Clean()
+	t.sendLineResult(t.rb.Bytes(), nil)
+	t.rb.Reset()
 }
 
 func (t *Terminal) opKill() {

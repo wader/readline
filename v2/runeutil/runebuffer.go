@@ -80,31 +80,39 @@ func (rb *RuneBuffer) Len() int {
 	return len(rb.buf)
 }
 
-func (rb *RuneBuffer) Slice() []rune {
+func (rb *RuneBuffer) String() string {
+	return string(rb.Runes())
+}
+
+func (rb *RuneBuffer) Bytes() []byte {
+	return []byte(rb.String())
+}
+
+func (rb *RuneBuffer) Runes() []rune {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 	return Copy(rb.buf)
 }
 
-func (rb *RuneBuffer) SliceTo(lastIdx int) []rune {
+func (rb *RuneBuffer) RunesTo(lastIdx int) []rune {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	return Copy(rb.sliceAt(0, lastIdx))
+	return Copy(rb.bufAt(0, lastIdx))
 }
 
-func (rb *RuneBuffer) SliceSub(count int) []rune {
+func (rb *RuneBuffer) RunesSub(count int) []rune {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	return Copy(rb.sliceAt(-1, count))
+	return Copy(rb.bufAt(-1, count))
 }
 
-func (rb *RuneBuffer) SliceAt(idx int, count int) []rune {
+func (rb *RuneBuffer) RunesAt(idx int, count int) []rune {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	return Copy(rb.sliceAt(idx, count))
+	return Copy(rb.bufAt(idx, count))
 }
 
-func (rb *RuneBuffer) sliceAt(idx int, count int) []rune {
+func (rb *RuneBuffer) bufAt(idx int, count int) []rune {
 	if idx < 0 {
 		idx = rb.idx
 	}
@@ -155,7 +163,7 @@ func (rb *RuneBuffer) WidthAt(idx int, count int) int {
 }
 
 func (rb *RuneBuffer) widthAt(idx int, count int) int {
-	return WidthAll(rb.sliceAt(idx, count))
+	return WidthAll(rb.bufAt(idx, count))
 }
 
 func (rb *RuneBuffer) Refresh(f func()) {
@@ -170,20 +178,20 @@ func (rb *RuneBuffer) Refresh(f func()) {
 	}
 
 	rb.clean()
+	defer rb.print()
 	if f != nil {
 		f()
 	}
-	rb.print()
 }
 
 func (rb *RuneBuffer) Set(idx int, buf []rune) {
 	rb.Refresh(func() {
-		rb.buf = buf
+		rb.buf = CopyAndGrow(buf, len(buf))
 		rb.idx = idx
 	})
 }
 
-func (rb *RuneBuffer) SetSlice(s []rune) {
+func (rb *RuneBuffer) SetBuf(s []rune) {
 	rb.Set(len(s), s)
 }
 
@@ -203,13 +211,11 @@ func (rb *RuneBuffer) Restore() {
 	})
 }
 
-func (rb *RuneBuffer) Reset() []rune {
+func (rb *RuneBuffer) Reset() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	ret := Copy(rb.buf)
 	rb.buf = rb.buf[:0]
 	rb.idx = 0
-	return ret
 }
 
 func (rb *RuneBuffer) Clean() {

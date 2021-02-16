@@ -13,7 +13,7 @@ func main() {
 		panic(err)
 	}
 	for {
-		p, err := t.ReadSlice()
+		p, err := t.ReadBytes()
 		if p != nil {
 			fmt.Println(string(p))
 		}
@@ -21,5 +21,6 @@ func main() {
 			fmt.Println(err)
 			break
 		}
+		//fmt.Println(len(p))
 	}
 }
