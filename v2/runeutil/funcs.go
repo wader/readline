@@ -1,4 +1,4 @@
-package readline
+package runeutil
 
 import (
 	"bytes"

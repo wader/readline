@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/goinsane/readline/v2/runeutil"
 )
 
 type Terminal struct {
@@ -17,6 +19,7 @@ type Terminal struct {
 	screenBrokenPipeCh  chan struct{}
 	screenSizeChangedCh chan struct{}
 	lineResultCh        chan lineResult
+	rb                  *runeutil.RuneBuffer
 	stdinReader         io.ReadCloser
 	stdinWriter         io.Writer
 	ctx                 context.Context
@@ -47,6 +50,7 @@ func NewTerminal(config Config) (*Terminal, error) {
 		screenSizeChangedCh: make(chan struct{}, 1),
 		lineResultCh:        make(chan lineResult, 1),
 	}
+	t.rb = runeutil.NewRuneBuffer(config.Stdout, config.Prompt, config.Mask, config.ForceUseInteractive, GetWidth(t.stdout))
 	t.stdinReader, t.stdinWriter = newExtendedStdin(config.Stdin)
 	t.ctx, t.ctxCancel = context.WithCancel(context.Background())
 	RegisterOnScreenBrokenPipe(t.screenBrokenPipeCh)
@@ -156,15 +160,23 @@ func (t *Terminal) ReadSlice() ([]byte, error) {
 	return t.ReadSliceContext(context.Background())
 }
 
-func (t *Terminal) ReadSliceContext(ctx context.Context) ([]byte, error) {
+func (t *Terminal) ReadSliceContext(ctx context.Context) (line []byte, err error) {
 	t.mu.Lock()
-	err := t.ioErr
+	err = t.ioErr
 	t.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	t.EnterRawMode()
-	defer t.ExitRawMode()
+	err = t.EnterRawMode()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		e := t.ExitRawMode()
+		if err == nil {
+			err = e
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -290,8 +302,9 @@ func (t *Terminal) ioloop() {
 
 		default:
 			c := encodeControlChars(p)
+			r, _ := utf8.DecodeRune(c)
 			appendLineBuf(c)
-			t.print(c...)
+			t.rb.WriteRune(r)
 
 		}
 	}

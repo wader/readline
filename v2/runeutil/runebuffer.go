@@ -1,4 +1,4 @@
-package readline
+package runeutil
 
 import (
 	"bufio"
@@ -338,8 +338,8 @@ func (rb *RuneBuffer) isInLineEdge() bool {
 	return len(sp[len(sp)-1]) == 0
 }
 
-func (rb *RuneBuffer) getSplitByLine(rs []rune) []string {
-	return SplitByLine(rb.promptWidth, rb.screenWidth, rs)
+func (rb *RuneBuffer) getSplitByLine(s []rune) []string {
+	return SplitByLine(rb.promptWidth, rb.screenWidth, s)
 }
 
 func (rb *RuneBuffer) IsCursorInEnd() bool {

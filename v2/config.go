@@ -15,8 +15,7 @@ type Config struct {
 	Stdout *os.File
 	Stderr *os.File
 
-	EnableMask bool
-	MaskRune   rune
+	Mask rune
 
 	ForceUseInteractive bool
 
