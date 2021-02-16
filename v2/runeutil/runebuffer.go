@@ -80,59 +80,111 @@ func (rb *RuneBuffer) Len() int {
 	return len(rb.buf)
 }
 
-func (rb *RuneBuffer) Width() int {
-	return rb.WidthTo(-1)
-}
-
-func (rb *RuneBuffer) WidthTo(idx int) int {
+func (rb *RuneBuffer) Slice() []rune {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	if idx < 0 || idx > len(rb.buf) {
+	return Copy(rb.buf)
+}
+
+func (rb *RuneBuffer) SliceTo(lastIdx int) []rune {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return Copy(rb.sliceAt(0, lastIdx))
+}
+
+func (rb *RuneBuffer) SliceSub(count int) []rune {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return Copy(rb.sliceAt(-1, count))
+}
+
+func (rb *RuneBuffer) SliceAt(idx int, count int) []rune {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return Copy(rb.sliceAt(idx, count))
+}
+
+func (rb *RuneBuffer) sliceAt(idx int, count int) []rune {
+	if idx < 0 {
+		idx = rb.idx
+	}
+	if idx > len(rb.buf) {
 		idx = len(rb.buf)
 	}
-	return WidthAll(rb.buf[:idx])
-}
-
-func (rb *RuneBuffer) Runes() []rune {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	s := make([]rune, len(rb.buf))
-	copy(s, rb.buf)
+	var s []rune
+	if count >= 0 {
+		s = rb.buf[idx:]
+		/*if count == 0 {
+			count = len(rb.buf)
+		}*/
+		if len(s) > count {
+			s = s[:count]
+		}
+	} else {
+		start := idx + count
+		if start < 0 {
+			start = 0
+		}
+		s = rb.buf[start:idx]
+	}
 	return s
 }
 
-func (rb *RuneBuffer) RuneSlice(count int) []rune {
+func (rb *RuneBuffer) Width() int {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	if count > 0 {
-		s := make([]rune, count)
-		s = s[:copy(s, rb.buf[rb.idx:])]
-		return s
+	return WidthAll(rb.buf)
+}
+
+func (rb *RuneBuffer) WidthTo(lastIdx int) int {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.widthAt(0, lastIdx)
+}
+
+func (rb *RuneBuffer) WidthSub(count int) int {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.widthAt(-1, count)
+}
+
+func (rb *RuneBuffer) WidthAt(idx int, count int) int {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.widthAt(idx, count)
+}
+
+func (rb *RuneBuffer) widthAt(idx int, count int) int {
+	return WidthAll(rb.sliceAt(idx, count))
+}
+
+func (rb *RuneBuffer) Refresh(f func()) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if !rb.interactive {
+		if f != nil {
+			f()
+		}
+		return
 	}
-	count = -count
-	start := rb.idx - count
-	if start < 0 {
-		start = 0
+
+	rb.clean()
+	if f != nil {
+		f()
 	}
-	s := make([]rune, count)
-	s = s[:copy(s, rb.buf[start:rb.idx])]
-	return s
+	rb.print()
 }
 
-func (rb *RuneBuffer) WriteString(s string) {
-	rb.WriteRunes([]rune(s))
-}
-
-func (rb *RuneBuffer) WriteRune(r rune) {
-	rb.WriteRunes([]rune{r})
-}
-
-func (rb *RuneBuffer) WriteRunes(s []rune) {
+func (rb *RuneBuffer) Set(idx int, buf []rune) {
 	rb.Refresh(func() {
-		tail := append(s, rb.buf[rb.idx:]...)
-		rb.buf = append(rb.buf[:rb.idx], tail...)
-		rb.idx += len(s)
+		rb.buf = buf
+		rb.idx = idx
 	})
+}
+
+func (rb *RuneBuffer) SetSlice(s []rune) {
+	rb.Set(len(s), s)
 }
 
 func (rb *RuneBuffer) Backup() {
@@ -148,6 +200,180 @@ func (rb *RuneBuffer) Restore() {
 		}
 		rb.buf = rb.backup.buf
 		rb.idx = rb.backup.idx
+	})
+}
+
+func (rb *RuneBuffer) Reset() []rune {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	ret := Copy(rb.buf)
+	rb.buf = rb.buf[:0]
+	rb.idx = 0
+	return ret
+}
+
+func (rb *RuneBuffer) Clean() {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	rb.clean()
+}
+
+func (rb *RuneBuffer) clean() {
+	rb.cleanWithIdxLine(rb.idxLine(rb.screenWidth))
+}
+
+func (rb *RuneBuffer) cleanWithIdxLine(idxLine int) {
+	if rb.hadClean || !rb.interactive {
+		return
+	}
+	rb.hadClean = true
+	rb.cleanOutput(rb.w, idxLine)
+}
+
+func (rb *RuneBuffer) cleanOutput(w io.Writer, idxLine int) {
+	buf := bufio.NewWriter(w)
+
+	if rb.screenWidth == 0 {
+		_, _ = buf.WriteString(strings.Repeat("\r\b", rb.promptWidth+len(rb.buf)))
+		_, _ = buf.Write([]byte("\033[J"))
+	} else {
+		_, _ = buf.Write([]byte("\033[J")) // just like ^k :)
+		if idxLine == 0 {
+			_, _ = buf.WriteString("\033[2K")
+			_, _ = buf.WriteString("\r")
+		} else {
+			for i := 0; i < idxLine; i++ {
+				_, _ = buf.WriteString("\033[2K\r\033[A")
+			}
+			_, _ = buf.WriteString("\033[2K\r")
+		}
+	}
+	_ = buf.Flush()
+	return
+}
+
+func (rb *RuneBuffer) print() {
+	_, _ = rb.w.Write(rb.output())
+	rb.hadClean = false
+}
+
+func (rb *RuneBuffer) output() []byte {
+	buf := bytes.NewBuffer(nil)
+	buf.WriteString(string(rb.prompt))
+	if rb.mask != 0 && len(rb.buf) > 0 {
+		buf.Write([]byte(strings.Repeat(string(rb.mask), len(rb.buf)-1)))
+		if rb.buf[len(rb.buf)-1] == '\n' {
+			buf.Write([]byte{'\n'})
+		} else {
+			buf.Write([]byte(string(rb.mask)))
+		}
+		if len(rb.buf) > rb.idx {
+			buf.Write(rb.getBackspaceSequence())
+		}
+
+	} else {
+		for _, c := range rb.buf {
+			if c == '\t' {
+				buf.WriteString(strings.Repeat(" ", TabWidth))
+			} else {
+				buf.WriteRune(c)
+			}
+		}
+		if rb.isInLineEdge() {
+			buf.Write([]byte(" \b"))
+		}
+	}
+	// cursor position
+	if len(rb.buf) > rb.idx {
+		buf.Write(rb.getBackspaceSequence())
+	}
+	return buf.Bytes()
+}
+
+func (rb *RuneBuffer) getBackspaceSequence() []byte {
+	var sep = map[int]bool{}
+
+	var idx int
+	for {
+		if idx >= WidthAll(rb.buf) {
+			break
+		}
+
+		if idx == 0 {
+			idx -= rb.promptWidth
+		}
+		idx += rb.screenWidth
+
+		sep[idx] = true
+	}
+	var buf []byte
+	for i := len(rb.buf); i > rb.idx; i-- {
+		// move input to the left of one
+		buf = append(buf, '\b')
+		if sep[i] {
+			// up one line, go to the start of the line and move cursor right to the end (rb.screenWidth)
+			buf = append(buf, "\033[A\r"+"\033["+strconv.Itoa(rb.screenWidth)+"C"...)
+		}
+	}
+
+	return buf
+}
+
+func (rb *RuneBuffer) IdxLine(screenWidth int) int {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.idxLine(screenWidth)
+}
+
+func (rb *RuneBuffer) idxLine(screenWidth int) int {
+	if screenWidth <= 0 {
+		screenWidth = rb.screenWidth
+	}
+	sp := rb.getSplitByLine(rb.buf[:rb.idx])
+	return len(sp) - 1
+}
+
+func (rb *RuneBuffer) isInLineEdge() bool {
+	sp := rb.getSplitByLine(rb.buf)
+	return len(sp[len(sp)-1]) == 0
+}
+
+func (rb *RuneBuffer) getSplitByLine(rs []rune) []string {
+	return SplitByLine(rb.promptWidth, rb.screenWidth, rs)
+}
+
+func (rb *RuneBuffer) IsCursorInEnd() bool {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.idx == len(rb.buf)
+}
+
+func (rb *RuneBuffer) LineCount(screenWidth int) int {
+	if screenWidth <= 0 {
+		screenWidth = rb.screenWidth
+	}
+	return LineCount(screenWidth,
+		rb.promptWidth+WidthAll(rb.buf))
+}
+
+func (rb *RuneBuffer) CursorLineCount() int {
+	return rb.LineCount(rb.screenWidth) - rb.IdxLine(rb.screenWidth)
+}
+
+func (rb *RuneBuffer) WriteString(s string) {
+	rb.WriteRunes([]rune(s))
+}
+
+func (rb *RuneBuffer) WriteRune(r rune) {
+	rb.WriteRunes([]rune{r})
+}
+
+func (rb *RuneBuffer) WriteRunes(s []rune) {
+	rb.Refresh(func() {
+		rem := rb.buf[rb.idx:]
+		tail := append(CopyAndGrow(s, len(rem)), rem...)
+		rb.buf = append(rb.buf[:rb.idx], tail...)
+		rb.idx += len(s)
 	})
 }
 
@@ -396,10 +622,6 @@ func (rb *RuneBuffer) KillFront() {
 	})
 }
 
-func (rb *RuneBuffer) pushKill(text []rune) {
-	rb.lastKill = append([]rune{}, text...)
-}
-
 func (rb *RuneBuffer) Yank() {
 	if len(rb.lastKill) == 0 {
 		return
@@ -414,148 +636,14 @@ func (rb *RuneBuffer) Yank() {
 	})
 }
 
-func (rb *RuneBuffer) IsCursorInEnd() bool {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	return rb.idx == len(rb.buf)
-}
-
-func (rb *RuneBuffer) LineCount(screenWidth int) int {
-	if screenWidth <= 0 {
-		screenWidth = rb.screenWidth
-	}
-	return LineCount(screenWidth,
-		rb.promptWidth+WidthAll(rb.buf))
-}
-
-func (rb *RuneBuffer) isInLineEdge() bool {
-	sp := rb.getSplitByLine(rb.buf)
-	return len(sp[len(sp)-1]) == 0
-}
-
-func (rb *RuneBuffer) getSplitByLine(rs []rune) []string {
-	return SplitByLine(rb.promptWidth, rb.screenWidth, rs)
-}
-
-func (rb *RuneBuffer) IdxLine(screenWidth int) int {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	return rb.idxLine(screenWidth)
-}
-
-func (rb *RuneBuffer) idxLine(screenWidth int) int {
-	if screenWidth <= 0 {
-		screenWidth = rb.screenWidth
-	}
-	sp := rb.getSplitByLine(rb.buf[:rb.idx])
-	return len(sp) - 1
-}
-
-func (rb *RuneBuffer) CursorLineCount() int {
-	return rb.LineCount(rb.screenWidth) - rb.IdxLine(rb.screenWidth)
-}
-
-func (rb *RuneBuffer) Refresh(f func()) {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-
-	if !rb.interactive {
-		if f != nil {
-			f()
-		}
-		return
-	}
-
-	rb.clean()
-	if f != nil {
-		f()
-	}
-	rb.print()
-}
-
-func (rb *RuneBuffer) print() {
-	rb.w.Write(rb.output())
-	rb.hadClean = false
-}
-
-func (rb *RuneBuffer) output() []byte {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteString(string(rb.prompt))
-	if rb.mask != 0 && len(rb.buf) > 0 {
-		buf.Write([]byte(strings.Repeat(string(rb.mask), len(rb.buf)-1)))
-		if rb.buf[len(rb.buf)-1] == '\n' {
-			buf.Write([]byte{'\n'})
-		} else {
-			buf.Write([]byte(string(rb.mask)))
-		}
-		if len(rb.buf) > rb.idx {
-			buf.Write(rb.getBackspaceSequence())
-		}
-
-	} else {
-		for _, c := range rb.buf {
-			if c == '\t' {
-				buf.WriteString(strings.Repeat(" ", TabWidth))
-			} else {
-				buf.WriteRune(c)
-			}
-		}
-		if rb.isInLineEdge() {
-			buf.Write([]byte(" \b"))
-		}
-	}
-	// cursor position
-	if len(rb.buf) > rb.idx {
-		buf.Write(rb.getBackspaceSequence())
-	}
-	return buf.Bytes()
-}
-
-func (rb *RuneBuffer) getBackspaceSequence() []byte {
-	var sep = map[int]bool{}
-
-	var i int
-	for {
-		if i >= WidthAll(rb.buf) {
-			break
-		}
-
-		if i == 0 {
-			i -= rb.promptWidth
-		}
-		i += rb.screenWidth
-
-		sep[i] = true
-	}
-	var buf []byte
-	for i := len(rb.buf); i > rb.idx; i-- {
-		// move input to the left of one
-		buf = append(buf, '\b')
-		if sep[i] {
-			// up one line, go to the start of the line and move cursor right to the end (rb.screenWidth)
-			buf = append(buf, "\033[A\r"+"\033["+strconv.Itoa(rb.screenWidth)+"C"...)
-		}
-	}
-
-	return buf
-
-}
-
-func (rb *RuneBuffer) Reset() []rune {
-	ret := Copy(rb.buf)
-	rb.buf = rb.buf[:0]
-	rb.idx = 0
-	return ret
-}
-
-func (rb *RuneBuffer) calcWidth(m int) int {
-	if m > 0 {
-		return WidthAll(rb.buf[rb.idx : rb.idx+m])
-	}
-	return WidthAll(rb.buf[rb.idx+m : rb.idx])
+func (rb *RuneBuffer) pushKill(text []rune) {
+	rb.lastKill = append([]rune{}, text...)
 }
 
 func (rb *RuneBuffer) SetStyle(start, end int, style string) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
 	if end < start {
 		panic("end < start")
 	}
@@ -565,63 +653,12 @@ func (rb *RuneBuffer) SetStyle(start, end int, style string) {
 	if move > 0 {
 		rb.w.Write([]byte(string(rb.buf[rb.idx : rb.idx+move])))
 	} else {
-		rb.w.Write(bytes.Repeat([]byte("\b"), rb.calcWidth(move)))
+		rb.w.Write(bytes.Repeat([]byte("\b"), rb.widthAt(-1, move)))
 	}
 	rb.w.Write([]byte("\033[" + style + "m"))
 	rb.w.Write([]byte(string(rb.buf[start:end])))
 	rb.w.Write([]byte("\033[0m"))
 	// TODO: move back
-}
-
-func (rb *RuneBuffer) SetWithIdx(idx int, buf []rune) {
-	rb.Refresh(func() {
-		rb.buf = buf
-		rb.idx = idx
-	})
-}
-
-func (rb *RuneBuffer) Set(buf []rune) {
-	rb.SetWithIdx(len(buf), buf)
-}
-
-func (rb *RuneBuffer) cleanOutput(w io.Writer, idxLine int) {
-	buf := bufio.NewWriter(w)
-
-	if rb.screenWidth == 0 {
-		buf.WriteString(strings.Repeat("\r\b", rb.promptWidth+len(rb.buf)))
-		buf.Write([]byte("\033[J"))
-	} else {
-		buf.Write([]byte("\033[J")) // just like ^k :)
-		if idxLine == 0 {
-			buf.WriteString("\033[2K")
-			buf.WriteString("\r")
-		} else {
-			for i := 0; i < idxLine; i++ {
-				io.WriteString(buf, "\033[2K\r\033[A")
-			}
-			io.WriteString(buf, "\033[2K\r")
-		}
-	}
-	buf.Flush()
-	return
-}
-
-func (rb *RuneBuffer) Clean() {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	rb.clean()
-}
-
-func (rb *RuneBuffer) clean() {
-	rb.cleanWithIdxLine(rb.idxLine(rb.screenWidth))
-}
-
-func (rb *RuneBuffer) cleanWithIdxLine(idxLine int) {
-	if rb.hadClean || !rb.interactive {
-		return
-	}
-	rb.hadClean = true
-	rb.cleanOutput(rb.w, idxLine)
 }
 
 type runeBufferBackup struct {

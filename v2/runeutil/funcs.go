@@ -12,6 +12,15 @@ func Copy(s []rune) []rune {
 	return result
 }
 
+func CopyAndGrow(s []rune, grow int) []rune {
+	if grow < 0 {
+		grow = 0
+	}
+	result := make([]rune, len(s), len(s)+grow)
+	copy(result, s)
+	return result
+}
+
 func EqualRune(a, b rune, fold bool) bool {
 	if a == b {
 		return true
