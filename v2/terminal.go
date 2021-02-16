@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -213,7 +212,7 @@ func (t *Terminal) ioloop() {
 		if err != nil {
 			break
 		}
-		if b > unicode.MaxASCII && !escaped {
+		if b >= utf8.RuneSelf && !escaped {
 			_ = br.UnreadByte()
 			var r rune
 			r, _, err = br.ReadRune()
