@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	screenBrokenPipeCh = make(chan struct{}, 1)
+	screenBrokenPipeCh  = make(chan struct{}, 1)
 	screenSizeChangedCh = make(chan struct{}, 1)
 )
 
@@ -26,7 +26,7 @@ func initScreenBrokenPipe() {
 		for range ch {
 			if checkScreenBrokenPipe() {
 				select {
-				case screenBrokenPipeCh<-struct{}{}:
+				case screenBrokenPipeCh <- struct{}{}:
 				default:
 				}
 			}
@@ -40,7 +40,7 @@ func initScreenSizeChanged() {
 	go func() {
 		for range ch {
 			select {
-			case screenSizeChangedCh<-struct{}{}:
+			case screenSizeChangedCh <- struct{}{}:
 			default:
 			}
 		}
@@ -62,7 +62,6 @@ func (s *State) Duplicate() *State {
 // restore the terminal after a signal.
 func GetState(fd int) (*State, error) {
 	termios, err := getTermios(fd)
-	err = correctErrNo0(err)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +71,7 @@ func GetState(fd int) (*State, error) {
 // RestoreState restores the terminal connected to the given file descriptor to a
 // given state.
 func RestoreState(fd int, state *State) error {
-	return correctErrNo0(setTermios(fd, &state.termios))
+	return setTermios(fd, &state.termios)
 }
 
 // SetRawMode put the terminal connected to the given file descriptor into raw

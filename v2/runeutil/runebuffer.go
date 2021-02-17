@@ -186,7 +186,7 @@ func (rb *RuneBuffer) Refresh(f func()) {
 
 func (rb *RuneBuffer) Set(idx int, buf []rune) {
 	rb.Refresh(func() {
-		rb.buf = CopyAndGrow(buf, len(buf))
+		rb.buf = CopyAndGrow(buf, cap(buf)-len(buf))
 		rb.idx = idx
 	})
 }
@@ -254,6 +254,7 @@ func (rb *RuneBuffer) cleanOutput(w io.Writer, idxLine int) {
 			_, _ = buf.WriteString("\033[2K\r")
 		}
 	}
+
 	_ = buf.Flush()
 	return
 }
@@ -370,8 +371,8 @@ func (rb *RuneBuffer) WriteString(s string) {
 	rb.WriteRunes([]rune(s))
 }
 
-func (rb *RuneBuffer) WriteRune(r rune) {
-	rb.WriteRunes([]rune{r})
+func (rb *RuneBuffer) WriteBytes(p []byte) {
+	rb.WriteString(string(p))
 }
 
 func (rb *RuneBuffer) WriteRunes(s []rune) {
@@ -381,6 +382,10 @@ func (rb *RuneBuffer) WriteRunes(s []rune) {
 		rb.buf = append(rb.buf[:rb.idx], tail...)
 		rb.idx += len(s)
 	})
+}
+
+func (rb *RuneBuffer) WriteRune(r rune) {
+	rb.WriteRunes([]rune{r})
 }
 
 func (rb *RuneBuffer) MoveToLineStart() {
@@ -644,6 +649,11 @@ func (rb *RuneBuffer) Yank() {
 
 func (rb *RuneBuffer) pushKill(text []rune) {
 	rb.lastKill = append([]rune{}, text...)
+}
+
+func (rb *RuneBuffer) Clear() {
+	_, _ = rb.w.Write([]byte("\033[H"))
+	rb.Refresh(nil)
 }
 
 func (rb *RuneBuffer) SetStyle(start, end int, style string) {

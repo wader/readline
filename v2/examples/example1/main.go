@@ -7,7 +7,9 @@ import (
 )
 
 func main() {
-	t, err := readline.NewTerminal(readline.Config{})
+	t, err := readline.NewTerminal(readline.Config{
+		Prompt: "> ",
+	})
 	defer t.Close()
 	if err != nil {
 		panic(err)

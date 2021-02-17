@@ -10,12 +10,26 @@ import (
 	"unicode/utf8"
 )
 
-func correctErrNo0(e error) error {
+/*func correctErrNo0(e error) error {
 	// errno 0 means everything is ok :)
-	if e == nil || e.Error() == "errno 0" {
+	if e == nil {
 		return nil
 	}
+	if errno, ok := e.(syscall.Errno); ok && errno == 0 {
+		return nil
+	}
+	// if e.Error() == "errno 0" {
+	// 	return nil
+	// }
 	return e
+}*/
+
+func isInterruptedSyscall(e error) bool {
+	if errno, ok := e.(syscall.Errno); ok && errno == syscall.EINTR {
+		return true
+	}
+	return false
+	//return strings.Contains(e.Error(), "interrupted system call")
 }
 
 func checkBrokenPipe(w io.Writer) bool {
@@ -33,7 +47,7 @@ func isFileChar(f *os.File) bool {
 }
 
 var (
-	escapeRgx = regexp.MustCompile(`^(?P<esc>(?P<char>.)((?P<attr>\d+)(;(?P<attr2>\d+))?)?(?P<typ>[^\d;]))?(?P<rem>.+)?$`)
+	escapeRgx = regexp.MustCompile(`^(?P<esc>(?P<char>.)((?P<attr>\d+)(;(?P<attr2>\d+))?)?(?P<typ>[^\d;])?)?(?P<rem>.+)?$`)
 )
 
 type escapeKeyPair struct {

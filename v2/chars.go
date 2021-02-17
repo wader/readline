@@ -66,12 +66,12 @@ const (
 	CharCtrlX = 0x18
 
 	CharCtrlY = 0x19
+	CharYank  = CharCtrlY
 
-	CharCtrlZ = 0x1A
+	CharCtrlZ   = 0x1A
+	CharSuspend = CharCtrlZ
 
 	CharEscape = 0x1B
-
-	CharEscapeEx = 0x5B
 
 	CharBackspace = 0x7F
 )

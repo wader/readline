@@ -70,6 +70,8 @@ func (t *Terminal) Close() error {
 		t.ctxCancel()
 		_ = t.stdinReader.Close()
 		t.wg.Wait()
+		UnregisterOnScreenBrokenPipe(t.screenBrokenPipeCh)
+		UnregisterOnScreenSizeChanged(t.screenSizeChangedCh)
 		err = t.ExitRawMode()
 	})
 	return err
@@ -225,8 +227,7 @@ func (t *Terminal) ioloop() {
 				escBuf = append(escBuf, p...)
 			}
 			escKeyPair := decodeEscapeKeyPair(escBuf)
-			if escKeyPair != nil {
-				t.escape(escKeyPair)
+			if escKeyPair != nil && t.escape(escKeyPair) {
 				escaped = false
 				p = escKeyPair.Remainder
 			} else {
@@ -244,46 +245,61 @@ func (t *Terminal) ioloop() {
 
 		switch p[0] {
 		case CharLineStart:
+			t.opLineStart()
 
 		case CharBackward:
 			t.opBackward()
 
 		case CharInterrupt:
+			err = ErrInterrupted
 
 		case CharDelete:
 			err = io.EOF
 
 		case CharLineEnd:
+			t.opLineEnd()
 
 		case CharForward:
 			t.opForward()
 
 		case CharBell:
+			t.opBell()
 
 		case CharCtrlH, CharBackspace:
+			t.opBackspace()
 
 		case CharTab:
+			t.opTab()
 
 		case CharCtrlJ, CharEnter:
 			t.opEnter()
 
 		case CharKill:
+			t.opKill()
 
 		case CharClear:
+			t.opClear()
 
 		case CharNext:
+			t.opNext()
 
 		case CharPrev:
+			t.opPrev()
 
 		case CharBckSearch:
+			t.opBckSearch()
 
 		case CharFwdSearch:
+			t.opFwdSearch()
 
 		case CharTranspose:
+			t.opTranspose()
+
+		case CharYank:
+			t.opYank()
 
 		default:
-			r, _ := utf8.DecodeRune(encodeControlChars(p))
-			t.rb.WriteRune(r)
+			t.rb.WriteBytes(encodeControlChars(p))
 
 		}
 	}
@@ -295,8 +311,115 @@ func (t *Terminal) ioloop() {
 	t.sendLineResult(t.rb.Bytes(), err)
 }
 
-func (t *Terminal) escape(escKeyPair *escapeKeyPair) {
+func (t *Terminal) escape(escKeyPair *escapeKeyPair) bool {
+	switch escKeyPair.Char {
+	case CharTranspose:
+		t.opTranspose()
 
+	case CharEscape:
+
+	case CharBackspace:
+		t.opBackEscapeWord()
+
+	case 'O', '[':
+		return t.escapeEx(escKeyPair)
+
+	case 'b':
+		t.opBackward()
+
+	case 'd':
+		t.opDelete()
+
+	case 'f':
+		t.opForward()
+
+	default:
+
+	}
+
+	return true
+}
+
+func (t *Terminal) escapeEx(escKeyPair *escapeKeyPair) bool {
+	switch escKeyPair.Type {
+	case '\x00':
+		return false
+
+	case '~':
+		t.escapeTilda(escKeyPair)
+		return true
+
+	case 'R':
+		t.escapeR(escKeyPair)
+		return true
+
+	default:
+		if escKeyPair.Attribute <= 0 && escKeyPair.Attribute2 < 0 {
+			switch escKeyPair.Type {
+			case 'A':
+				t.opPrev()
+
+			case 'B':
+				t.opNext()
+
+			case 'C':
+				t.opForward()
+
+			case 'D':
+				t.opBackward()
+
+			case 'E':
+				//
+
+			case 'F':
+				t.opLineEnd()
+
+			case 'H':
+				t.opLineStart()
+
+			}
+		}
+
+	}
+
+	return true
+}
+
+func (t *Terminal) escapeTilda(escKeyPair *escapeKeyPair) {
+	if escKeyPair.Attribute2 < 0 {
+		switch escKeyPair.Attribute {
+		case 1:
+			t.opLineStart()
+
+		case 2:
+			// insert mode
+
+		case 3:
+			t.opDelete()
+
+		case 4:
+			t.opLineEnd()
+
+		case 5:
+			// pageup
+
+		case 6:
+			// pagedown
+
+		case 7:
+			t.opLineStart()
+
+		case 8:
+			t.opLineEnd()
+
+		}
+	}
+}
+
+func (t *Terminal) escapeR(escKeyPair *escapeKeyPair) {
+	if escKeyPair.Attribute >= 0 && escKeyPair.Attribute2 >= 0 {
+		t.screenSizeChanged(escKeyPair.Attribute2, escKeyPair.Attribute)
+	}
 }
 
 func (t *Terminal) sendLineResult(line []byte, e error) {
@@ -310,28 +433,36 @@ func (t *Terminal) sendLineResult(line []byte, e error) {
 	}
 }
 
-func (t *Terminal) print(p ...byte) {
-	_, _ = t.Write(p)
+func (t *Terminal) screenSizeChanged(width, height int) {
+	t.rb.SetScreenWidth(width)
 }
 
 func (t *Terminal) opLineStart() {
-
+	t.rb.MoveToLineStart()
 }
 
 func (t *Terminal) opBackward() {
 	t.rb.MoveBackward()
 }
 
-func (t *Terminal) opLineEnd() {
+func (t *Terminal) opDelete() {
+	t.rb.Delete()
+}
 
+func (t *Terminal) opLineEnd() {
+	t.rb.MoveToLineEnd()
 }
 
 func (t *Terminal) opForward() {
 	t.rb.MoveForward()
 }
 
-func (t *Terminal) opBackSpace() {
+func (t *Terminal) opBell() {
 
+}
+
+func (t *Terminal) opBackspace() {
+	t.rb.Backspace()
 }
 
 func (t *Terminal) opTab() {
@@ -340,18 +471,21 @@ func (t *Terminal) opTab() {
 
 func (t *Terminal) opEnter() {
 	t.rb.MoveToLineEnd()
-	t.print('\n')
-	t.rb.Clean()
-	t.sendLineResult(t.rb.Bytes(), nil)
+	t.rb.WriteRune('\n')
+	p := t.rb.Bytes()
+	if len(p) > 0 {
+		p = p[:len(p)-1]
+	}
+	t.sendLineResult(p, nil)
 	t.rb.Reset()
 }
 
 func (t *Terminal) opKill() {
-
+	t.rb.Kill()
 }
 
 func (t *Terminal) opClear() {
-
+	t.rb.Clear()
 }
 
 func (t *Terminal) opNext() {
@@ -371,5 +505,13 @@ func (t *Terminal) opFwdSearch() {
 }
 
 func (t *Terminal) opTranspose() {
+	t.rb.Transpose()
+}
 
+func (t *Terminal) opYank() {
+	t.rb.Yank()
+}
+
+func (t *Terminal) opBackEscapeWord() {
+	t.rb.BackEscapeWord()
 }
