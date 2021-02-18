@@ -183,6 +183,8 @@ func (t *Terminal) ReadBytesContext(ctx context.Context) (line []byte, err error
 			err = e
 		}
 	}()
+	t.rb.Reset()
+	t.rb.Refresh(nil)
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -204,6 +206,11 @@ func (t *Terminal) ioloop() {
 		var p []byte
 		b, err = br.ReadByte()
 		if err != nil {
+			if isInterruptedSyscall(err) {
+				escaped = false
+				escBuf = escBuf[:0]
+				continue
+			}
 			break
 		}
 		if b >= utf8.RuneSelf && !escaped {
@@ -294,6 +301,9 @@ func (t *Terminal) ioloop() {
 
 		case CharTranspose:
 			t.opTranspose()
+
+		case CharKillFront:
+			t.opKillFront()
 
 		case CharYank:
 			t.opYank()
@@ -506,6 +516,10 @@ func (t *Terminal) opFwdSearch() {
 
 func (t *Terminal) opTranspose() {
 	t.rb.Transpose()
+}
+
+func (t *Terminal) opKillFront() {
+	t.rb.KillFront()
 }
 
 func (t *Terminal) opYank() {

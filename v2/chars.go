@@ -57,7 +57,8 @@ const (
 	CharCtrlT     = 0x14
 	CharTranspose = CharCtrlT
 
-	CharCtrlU = 0x15
+	CharCtrlU     = 0x15
+	CharKillFront = CharCtrlU
 
 	CharCtrlV = 0x16
 

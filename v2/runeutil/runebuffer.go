@@ -1,7 +1,6 @@
 package runeutil
 
 import (
-	"bufio"
 	"bytes"
 	"io"
 	"strconv"
@@ -233,30 +232,27 @@ func (rb *RuneBuffer) cleanWithIdxLine(idxLine int) {
 		return
 	}
 	rb.hadClean = true
-	rb.cleanOutput(rb.w, idxLine)
+	_, _ = rb.w.Write(rb.outputClean(idxLine))
 }
 
-func (rb *RuneBuffer) cleanOutput(w io.Writer, idxLine int) {
-	buf := bufio.NewWriter(w)
-
-	if rb.screenWidth == 0 {
-		_, _ = buf.WriteString(strings.Repeat("\r\b", rb.promptWidth+len(rb.buf)))
-		_, _ = buf.Write([]byte("\033[J"))
+func (rb *RuneBuffer) outputClean(idxLine int) []byte {
+	buf := bytes.NewBuffer(nil)
+	if rb.screenWidth <= 0 {
+		buf.WriteString(strings.Repeat("\r\b", rb.promptWidth+len(rb.buf)))
+		buf.Write([]byte("\033[J"))
 	} else {
-		_, _ = buf.Write([]byte("\033[J")) // just like ^k :)
+		buf.Write([]byte("\033[J")) // just like ^k :)
 		if idxLine == 0 {
-			_, _ = buf.WriteString("\033[2K")
-			_, _ = buf.WriteString("\r")
+			buf.WriteString("\033[2K")
+			buf.WriteString("\r")
 		} else {
 			for i := 0; i < idxLine; i++ {
-				_, _ = buf.WriteString("\033[2K\r\033[A")
+				buf.WriteString("\033[2K\r\033[A")
 			}
-			_, _ = buf.WriteString("\033[2K\r")
+			buf.WriteString("\033[2K\r")
 		}
 	}
-
-	_ = buf.Flush()
-	return
+	return buf.Bytes()
 }
 
 func (rb *RuneBuffer) print() {
@@ -277,7 +273,6 @@ func (rb *RuneBuffer) output() []byte {
 		if len(rb.buf) > rb.idx {
 			buf.Write(rb.getBackspaceSequence())
 		}
-
 	} else {
 		for _, c := range rb.buf {
 			if c == '\t' {
@@ -314,19 +309,10 @@ func (rb *RuneBuffer) getBackspaceSequence() []byte {
 		if sep[idx] {
 			// up one line, go to the start of the line and move cursor right to the end (rb.screenWidth)
 			buf = append(buf, "\033[A\r"+"\033["+strconv.Itoa(rb.screenWidth)+"C"...)
-
-		} else {
-			// move input to the left of one
-			buf = append(buf, '\b')
+			continue
 		}
-
-		/*// move input to the left of one
+		// move input to the left of one
 		buf = append(buf, '\b')
-		if sep[idx] {
-			// go to the start of the line and move cursor right to the end (rb.screenWidth)
-			buf = append(buf, "\r\033["+strconv.Itoa(rb.screenWidth)+"C"...)
-
-		}*/
 	}
 
 	return buf

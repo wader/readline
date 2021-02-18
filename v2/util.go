@@ -25,7 +25,7 @@ import (
 }*/
 
 func isInterruptedSyscall(e error) bool {
-	if errno, ok := e.(syscall.Errno); ok && errno == syscall.EINTR {
+	if errors.Is(e, syscall.EINTR) {
 		return true
 	}
 	return false
