@@ -186,12 +186,12 @@ func (rb *RuneBuffer) Refresh(f func()) {
 
 func (rb *RuneBuffer) Set(idx int, buf []rune) {
 	rb.Refresh(func() {
-		rb.buf = CopyAndGrow(buf, cap(buf)-len(buf))
 		rb.idx = idx
+		rb.buf = CopyAndGrow(buf, cap(buf)-len(buf))
 	})
 }
 
-func (rb *RuneBuffer) SetBuf(s []rune) {
+func (rb *RuneBuffer) SetRunes(s []rune) {
 	rb.Set(len(s), s)
 }
 
@@ -214,8 +214,8 @@ func (rb *RuneBuffer) Restore() {
 func (rb *RuneBuffer) Reset() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	rb.buf = rb.buf[:0]
 	rb.idx = 0
+	rb.buf = rb.buf[:0]
 }
 
 func (rb *RuneBuffer) Clean() {
@@ -300,12 +300,7 @@ func (rb *RuneBuffer) output() []byte {
 func (rb *RuneBuffer) getBackspaceSequence() []byte {
 	var sep = map[int]bool{}
 
-	var idx int
-	for {
-		if idx >= WidthAll(rb.buf) {
-			break
-		}
-
+	for idx, size := 0, WidthAll(rb.buf); idx < size; idx++ {
 		if idx == 0 {
 			idx -= rb.promptWidth
 		}
@@ -313,14 +308,25 @@ func (rb *RuneBuffer) getBackspaceSequence() []byte {
 
 		sep[idx] = true
 	}
+
 	var buf []byte
-	for i := len(rb.buf); i > rb.idx; i-- {
-		// move input to the left of one
-		buf = append(buf, '\b')
-		if sep[i] {
+	for idx := len(rb.buf); idx > rb.idx; idx-- {
+		if sep[idx] {
 			// up one line, go to the start of the line and move cursor right to the end (rb.screenWidth)
 			buf = append(buf, "\033[A\r"+"\033["+strconv.Itoa(rb.screenWidth)+"C"...)
+
+		} else {
+			// move input to the left of one
+			buf = append(buf, '\b')
 		}
+
+		/*// move input to the left of one
+		buf = append(buf, '\b')
+		if sep[idx] {
+			// go to the start of the line and move cursor right to the end (rb.screenWidth)
+			buf = append(buf, "\r\033["+strconv.Itoa(rb.screenWidth)+"C"...)
+
+		}*/
 	}
 
 	return buf
