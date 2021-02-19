@@ -106,7 +106,7 @@ func encodeControlChars(p []byte) []byte {
 			result = append(result, '^', 0x40+b)
 			continue
 		}
-		if b == CharBackspace {
+		if b == CharBackspaceEx {
 			result = append(result, "^?"...)
 			continue
 		}

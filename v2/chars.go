@@ -22,12 +22,14 @@ const (
 	CharCtrlG = 0x07
 	CharBell  = CharCtrlG
 
-	CharCtrlH = 0x08
+	CharCtrlH     = 0x08
+	CharBackspace = CharCtrlH
 
 	CharCtrlI = 0x09
 	CharTab   = CharCtrlI
 
 	CharCtrlJ = 0x0A
+	CharFeed  = CharCtrlJ
 
 	CharCtrlK = 0x0B
 	CharKill  = CharCtrlK
@@ -35,8 +37,8 @@ const (
 	CharCtrlL = 0x0C
 	CharClear = CharCtrlL
 
-	CharCtrlM = 0x0D
-	CharEnter = CharCtrlM
+	CharCtrlM  = 0x0D
+	CharReturn = CharCtrlM
 
 	CharCtrlN = 0x0E
 	CharNext  = CharCtrlN
@@ -62,7 +64,8 @@ const (
 
 	CharCtrlV = 0x16
 
-	CharCtrlW = 0x17
+	CharCtrlW         = 0x17
+	CharKillWordFront = CharCtrlW
 
 	CharCtrlX = 0x18
 
@@ -74,5 +77,7 @@ const (
 
 	CharEscape = 0x1B
 
-	CharBackspace = 0x7F
+	CharEscapeEx = 0x5B
+
+	CharBackspaceEx = 0x7F
 )

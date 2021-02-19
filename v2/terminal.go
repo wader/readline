@@ -29,9 +29,10 @@ type Terminal struct {
 	ctxCancel           context.CancelFunc
 	wg                  sync.WaitGroup
 	onceClose           sync.Once
+	ioErr               atomic.Value
+	ioInsMode           bool
 	lckr                xcontext.Locker
 	oldState            *State
-	ioErr               atomic.Value
 }
 
 func NewTerminal(config Config) (*Terminal, error) {
@@ -297,14 +298,14 @@ func (t *Terminal) ioloop() {
 		case CharBell:
 			t.opBell()
 
-		case CharCtrlH, CharBackspace:
+		case CharBackspace, CharBackspaceEx:
 			t.opBackspace()
 
 		case CharTab:
 			t.opTab()
 
-		case CharCtrlJ, CharEnter:
-			t.opEnter()
+		case CharFeed, CharReturn:
+			t.opReturn()
 
 		case CharKill:
 			t.opKill()
@@ -330,11 +331,19 @@ func (t *Terminal) ioloop() {
 		case CharKillFront:
 			t.opKillFront()
 
+		case CharKillWordFront:
+			t.opKillWordFront()
+
 		case CharYank:
 			t.opYank()
 
 		default:
-			t.rb.WriteBytes(encodeControlChars(p))
+			p = encodeControlChars(p)
+			if !t.ioInsMode {
+				t.rb.WriteBytes(p)
+			} else {
+				t.rb.InsertBytes(p)
+			}
 
 		}
 	}
@@ -353,8 +362,8 @@ func (t *Terminal) escape(escKeyPair *escapeKeyPair) bool {
 
 	case CharEscape:
 
-	case CharBackspace:
-		t.opBackEscapeWord()
+	case CharBackspaceEx:
+		t.opKillWordFront()
 
 	case 'O', '[':
 		return t.escapeEx(escKeyPair)
@@ -427,7 +436,7 @@ func (t *Terminal) escapeTilda(escKeyPair *escapeKeyPair) {
 			t.opLineStart()
 
 		case 2:
-			// insert mode
+			t.ioInsMode = !t.ioInsMode
 
 		case 3:
 			t.opDelete()
@@ -504,7 +513,7 @@ func (t *Terminal) opTab() {
 
 }
 
-func (t *Terminal) opEnter() {
+func (t *Terminal) opReturn() {
 	t.rb.MoveToLineEnd()
 	t.rb.WriteRune('\n')
 	p := t.rb.Bytes()
@@ -547,10 +556,11 @@ func (t *Terminal) opKillFront() {
 	t.rb.KillFront()
 }
 
-func (t *Terminal) opYank() {
-	t.rb.Yank()
+func (t *Terminal) opKillWordFront() {
+	t.rb.KillWordFront()
 }
 
-func (t *Terminal) opBackEscapeWord() {
-	t.rb.BackEscapeWord()
+
+func (t *Terminal) opYank() {
+	t.rb.Yank()
 }

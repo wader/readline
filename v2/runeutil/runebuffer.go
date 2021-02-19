@@ -406,12 +406,12 @@ func (rb *RuneBuffer) cursorLineCount() int {
 	return rb.lineCount() - rb.idxLine()
 }
 
-func (rb *RuneBuffer) WriteString(s string) {
-	rb.WriteRunes([]rune(s))
-}
-
 func (rb *RuneBuffer) WriteBytes(p []byte) {
 	rb.WriteString(string(p))
+}
+
+func (rb *RuneBuffer) WriteString(s string) {
+	rb.WriteRunes([]rune(s))
 }
 
 func (rb *RuneBuffer) WriteRunes(s []rune) {
@@ -425,6 +425,25 @@ func (rb *RuneBuffer) WriteRunes(s []rune) {
 
 func (rb *RuneBuffer) WriteRune(r rune) {
 	rb.WriteRunes([]rune{r})
+}
+
+func (rb *RuneBuffer) InsertBytes(p []byte) {
+	rb.InsertString(string(p))
+}
+
+func (rb *RuneBuffer) InsertString(s string) {
+	rb.InsertRunes([]rune(s))
+}
+
+func (rb *RuneBuffer) InsertRunes(s []rune) {
+	rb.Refresh(func() {
+		rb.buf = append(rb.buf, s[copy(rb.buf[rb.idx:], s):]...)
+		rb.idx += len(s)
+	})
+}
+
+func (rb *RuneBuffer) InsertRune(r rune) {
+	rb.InsertRunes([]rune{r})
 }
 
 func (rb *RuneBuffer) MoveToLineStart() {
@@ -586,12 +605,6 @@ func (rb *RuneBuffer) Transpose() {
 	})
 }
 
-func (rb *RuneBuffer) Replace(ch rune) {
-	rb.Refresh(func() {
-		rb.buf[rb.idx] = ch
-	})
-}
-
 func (rb *RuneBuffer) Erase() {
 	rb.Refresh(func() {
 		rb.idx = 0
@@ -612,7 +625,7 @@ func (rb *RuneBuffer) Delete() (success bool) {
 	return
 }
 
-func (rb *RuneBuffer) DeleteWord() {
+func (rb *RuneBuffer) KillWord() {
 	if rb.idx == len(rb.buf) {
 		return
 	}
@@ -632,7 +645,7 @@ func (rb *RuneBuffer) DeleteWord() {
 	rb.Kill()
 }
 
-func (rb *RuneBuffer) BackEscapeWord() {
+func (rb *RuneBuffer) KillWordFront() {
 	rb.Refresh(func() {
 		if rb.idx == 0 {
 			return

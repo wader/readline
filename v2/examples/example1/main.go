@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/goinsane/readline/v2"
 )
@@ -23,6 +24,7 @@ func main() {
 			fmt.Println(err)
 			break
 		}
+		time.Sleep(2*time.Second)
 		//fmt.Println(len(p))
 	}
 }
