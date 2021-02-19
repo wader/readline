@@ -6,9 +6,12 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/goinsane/readline/v2/runeutil"
+
+	"github.com/goinsane/xcontext"
 )
 
 type Terminal struct {
@@ -26,12 +29,13 @@ type Terminal struct {
 	ctxCancel           context.CancelFunc
 	wg                  sync.WaitGroup
 	onceClose           sync.Once
-	mu                  sync.Mutex
+	lckr                xcontext.Locker
 	oldState            *State
-	ioErr               error
+	ioErr               atomic.Value
 }
 
 func NewTerminal(config Config) (*Terminal, error) {
+	var err error
 	if config.Stdin == nil {
 		config.Stdin = os.Stdin
 	}
@@ -54,7 +58,10 @@ func NewTerminal(config Config) (*Terminal, error) {
 	if config.ForceUseInteractive {
 		interactive = true
 	}
-	t.rb = runeutil.NewRuneBuffer(config.Stdout, config.Prompt, config.Mask, interactive, GetWidth(t.stdout))
+	t.rb, err = runeutil.NewRuneBuffer(config.Stdout, config.Prompt, config.Mask, interactive, t.GetWidth())
+	if err != nil {
+		return nil, err
+	}
 	t.stdinReader, t.stdinWriter = newExtendedStdin(config.Stdin)
 	t.ctx, t.ctxCancel = context.WithCancel(context.Background())
 	RegisterOnScreenBrokenPipe(t.screenBrokenPipeCh)
@@ -104,8 +111,8 @@ func (t *Terminal) WriteStdin(b []byte) (int, error) {
 }
 
 func (t *Terminal) EnterRawMode() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.lckr.Lock()
+	defer t.lckr.Unlock()
 	return t.enterRawMode()
 }
 
@@ -122,8 +129,8 @@ func (t *Terminal) enterRawMode() error {
 }
 
 func (t *Terminal) ExitRawMode() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.lckr.Lock()
+	defer t.lckr.Unlock()
 	return t.exitRawMode()
 }
 
@@ -167,23 +174,20 @@ func (t *Terminal) ReadBytes() ([]byte, error) {
 }
 
 func (t *Terminal) ReadBytesContext(ctx context.Context) (line []byte, err error) {
-	t.mu.Lock()
-	err = t.ioErr
-	t.mu.Unlock()
+	err = t.lckr.LockContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	err = t.EnterRawMode()
+	defer t.lckr.Unlock()
+	ioErr := t.ioErr.Load()
+	if ioErr != nil {
+		return nil, ioErr.(error)
+	}
+	err = t.enterRawMode()
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		e := t.ExitRawMode()
-		if err == nil {
-			err = e
-		}
-	}()
-	t.rb.Reset()
+	defer t.exitRawMode()
 	t.rb.Refresh(nil)
 	select {
 	case <-ctx.Done():
@@ -193,32 +197,53 @@ func (t *Terminal) ReadBytesContext(ctx context.Context) (line []byte, err error
 	}
 }
 
+func (t *Terminal) ReadString() (string, error) {
+	return t.ReadStringContext(context.Background())
+}
+
+func (t *Terminal) ReadStringContext(ctx context.Context) (string, error) {
+	p, err := t.ReadBytesContext(ctx)
+	return string(p), err
+}
+
+func (t *Terminal) ReadLine() (string, error) {
+	return t.ReadString()
+}
+
+func (t *Terminal) ReadLineContext(ctx context.Context) (string, error) {
+	return t.ReadLineContext(ctx)
+}
+
 func (t *Terminal) ioloop() {
 	defer t.wg.Done()
 
+	br := bufio.NewReader(t.stdinReader)
 	escaped := false
 	escBuf := make([]byte, 0, 16)
 
-	br := bufio.NewReader(t.stdinReader)
 	var err error
-	for t.ctx.Err() == nil && err == nil {
+	for err == nil {
+		err = t.ctx.Err()
+		if err != nil {
+			continue
+		}
 		var b byte
 		var p []byte
 		b, err = br.ReadByte()
 		if err != nil {
 			if isInterruptedSyscall(err) {
+				err = nil
 				escaped = false
 				escBuf = escBuf[:0]
-				continue
 			}
-			break
+			continue
 		}
 		if b >= utf8.RuneSelf && !escaped {
 			_ = br.UnreadByte()
 			var r rune
 			r, _, err = br.ReadRune()
 			if err != nil {
-				break
+				continue
 			}
 			var utf8Array [utf8.UTFMax]byte
 			p = utf8Array[:utf8.EncodeRune(utf8Array[:], r)]
@@ -314,10 +339,10 @@ func (t *Terminal) ioloop() {
 		}
 	}
 
-	t.mu.Lock()
-	t.ioErr = err
-	t.mu.Unlock()
-
+	if xcontext.IsContextError(err) {
+		err = io.EOF
+	}
+	t.ioErr.Store(err)
 	t.sendLineResult(t.rb.Bytes(), err)
 }
 
@@ -444,7 +469,7 @@ func (t *Terminal) sendLineResult(line []byte, e error) {
 }
 
 func (t *Terminal) screenSizeChanged(width, height int) {
-	t.rb.SetScreenWidth(width)
+	_ = t.rb.SetScreenWidth(width)
 }
 
 func (t *Terminal) opLineStart() {
@@ -487,7 +512,7 @@ func (t *Terminal) opEnter() {
 		p = p[:len(p)-1]
 	}
 	t.sendLineResult(p, nil)
-	t.rb.Reset()
+	t.rb.ResetBuf()
 }
 
 func (t *Terminal) opKill() {

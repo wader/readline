@@ -10,25 +10,24 @@ import (
 	"unicode/utf8"
 )
 
-/*func correctErrNo0(e error) error {
+func correctErrNo0(e error) error {
 	// errno 0 means everything is ok :)
-	if e == nil {
+	if isErrNo0(e) {
 		return nil
 	}
-	if errno, ok := e.(syscall.Errno); ok && errno == 0 {
-		return nil
-	}
-	// if e.Error() == "errno 0" {
+	// if e != nil && e.Error() == "errno 0" {
 	// 	return nil
 	// }
 	return e
-}*/
+}
+
+func isErrNo0(e error) bool {
+	var errno syscall.Errno
+	return errors.As(e, &errno) && errno == 0
+}
 
 func isInterruptedSyscall(e error) bool {
-	if errors.Is(e, syscall.EINTR) {
-		return true
-	}
-	return false
+	return errors.Is(e, syscall.EINTR)
 	//return strings.Contains(e.Error(), "interrupted system call")
 }
 
