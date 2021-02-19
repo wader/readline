@@ -234,6 +234,7 @@ aggregate:
 	return
 }
 
+// SplitByLine splits s by line.
 func SplitByLine(start, screenWidth int, s []rune) []string {
 	var ret []string
 	buf := bytes.NewBuffer(nil)
@@ -252,7 +253,7 @@ func SplitByLine(start, screenWidth int, s []rune) []string {
 	return ret
 }
 
-// calculate how many lines for N character
+// LineCount calculates how many lines for given width.
 func LineCount(screenWidth, width int) int {
 	result := width / screenWidth
 	if width%screenWidth != 0 {

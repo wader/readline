@@ -2,6 +2,7 @@ package runeutil
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -27,15 +28,23 @@ type RuneBuffer struct {
 	lastKill []rune
 }
 
-func NewRuneBuffer(w io.Writer, prompt string, mask rune, interactive bool, screenWidth int) *RuneBuffer {
+func NewRuneBuffer(w io.Writer, prompt string, mask rune, interactive bool, screenWidth int) (*RuneBuffer, error) {
+	var err error
 	rb := &RuneBuffer{
 		w:           w,
 		mask:        mask,
 		interactive: interactive,
 		screenWidth: screenWidth,
 	}
+
 	rb.setPrompt(prompt)
-	return rb
+
+	err = rb.setScreenWidth(screenWidth)
+	if err != nil {
+		return nil, err
+	}
+
+	return rb, nil
 }
 
 func (rb *RuneBuffer) SetPrompt(prompt string) {
@@ -61,10 +70,18 @@ func (rb *RuneBuffer) SetInteractive(on bool) {
 	rb.interactive = on
 }
 
-func (rb *RuneBuffer) SetScreenWidth(screenWidth int) {
+func (rb *RuneBuffer) SetScreenWidth(screenWidth int) error {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+	return rb.setScreenWidth(screenWidth)
+}
+
+func (rb *RuneBuffer) setScreenWidth(screenWidth int) error {
+	if screenWidth <= 0 {
+		return fmt.Errorf("%w: %d", ErrInvalidScreenWidth, screenWidth)
+	}
 	rb.screenWidth = screenWidth
+	return nil
 }
 
 func (rb *RuneBuffer) Index() int {
@@ -182,20 +199,40 @@ func (rb *RuneBuffer) Refresh(f func()) {
 
 func (rb *RuneBuffer) Set(idx int, buf []rune) {
 	rb.Refresh(func() {
-		rb.idx = idx
-		rb.buf = CopyAndGrow(buf, cap(buf)-len(buf))
+		rb.setBuf(idx, buf)
 	})
+}
+
+func (rb *RuneBuffer) SetBuf(idx int, buf []rune) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	rb.setBuf(idx, buf)
+}
+
+func (rb *RuneBuffer) setBuf(idx int, buf []rune) {
+	rb.idx = idx
+	rb.buf = CopyAndGrow(buf, cap(buf)-len(buf))
+}
+
+func (rb *RuneBuffer) Reset() {
+	rb.Refresh(func() {
+		rb.resetBuf()
+	})
+}
+
+func (rb *RuneBuffer) ResetBuf() {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	rb.resetBuf()
+}
+
+func (rb *RuneBuffer) resetBuf() {
+	rb.idx = 0
+	rb.buf = rb.buf[:0]
 }
 
 func (rb *RuneBuffer) SetRunes(s []rune) {
 	rb.Set(len(s), s)
-}
-
-func (rb *RuneBuffer) Reset() {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	rb.idx = 0
-	rb.buf = rb.buf[:0]
 }
 
 func (rb *RuneBuffer) Backup() {
@@ -288,7 +325,7 @@ func (rb *RuneBuffer) Clean() {
 }
 
 func (rb *RuneBuffer) clean() {
-	rb.cleanWithIdxLine(rb.idxLine(rb.screenWidth))
+	rb.cleanWithIdxLine(rb.idxLine())
 }
 
 func (rb *RuneBuffer) cleanWithIdxLine(idxLine int) {
@@ -304,31 +341,28 @@ func (rb *RuneBuffer) outputCleanWithIdxLine(idxLine int) []byte {
 	if rb.screenWidth <= 0 {
 		buf.WriteString(strings.Repeat("\r\b", rb.promptWidth+len(rb.buf)))
 		buf.Write([]byte("\033[J"))
+		return buf.Bytes()
+	}
+	buf.Write([]byte("\033[J")) // just like ^k :)
+	if idxLine == 0 {
+		buf.WriteString("\033[2K")
+		buf.WriteString("\r")
 	} else {
-		buf.Write([]byte("\033[J")) // just like ^k :)
-		if idxLine == 0 {
-			buf.WriteString("\033[2K")
-			buf.WriteString("\r")
-		} else {
-			for i := 0; i < idxLine; i++ {
-				buf.WriteString("\033[2K\r\033[A")
-			}
-			buf.WriteString("\033[2K\r")
+		for i := 0; i < idxLine; i++ {
+			buf.WriteString("\033[2K\r\033[A")
 		}
+		buf.WriteString("\033[2K\r")
 	}
 	return buf.Bytes()
 }
 
-func (rb *RuneBuffer) IdxLine(screenWidth int) int {
+func (rb *RuneBuffer) IdxLine() int {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	return rb.idxLine(screenWidth)
+	return rb.idxLine()
 }
 
-func (rb *RuneBuffer) idxLine(screenWidth int) int {
-	if screenWidth <= 0 {
-		screenWidth = rb.screenWidth
-	}
+func (rb *RuneBuffer) idxLine() int {
 	sp := rb.getSplitByLine(rb.buf[:rb.idx])
 	return len(sp) - 1
 }
@@ -345,19 +379,31 @@ func (rb *RuneBuffer) getSplitByLine(s []rune) []string {
 func (rb *RuneBuffer) IsCursorInEnd() bool {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+	return rb.isCursorInEnd()
+}
+
+func (rb *RuneBuffer) isCursorInEnd() bool {
 	return rb.idx == len(rb.buf)
 }
 
-func (rb *RuneBuffer) LineCount(screenWidth int) int {
-	if screenWidth <= 0 {
-		screenWidth = rb.screenWidth
-	}
-	return LineCount(screenWidth,
-		rb.promptWidth+WidthAll(rb.buf))
+func (rb *RuneBuffer) LineCount() int {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.lineCount()
+}
+
+func (rb *RuneBuffer) lineCount() int {
+	return LineCount(rb.screenWidth, rb.promptWidth+WidthAll(rb.buf))
 }
 
 func (rb *RuneBuffer) CursorLineCount() int {
-	return rb.LineCount(rb.screenWidth) - rb.IdxLine(rb.screenWidth)
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.cursorLineCount()
+}
+
+func (rb *RuneBuffer) cursorLineCount() int {
+	return rb.lineCount() - rb.idxLine()
 }
 
 func (rb *RuneBuffer) WriteString(s string) {
@@ -640,8 +686,8 @@ func (rb *RuneBuffer) Yank() {
 	})
 }
 
-func (rb *RuneBuffer) pushKill(text []rune) {
-	rb.lastKill = append([]rune{}, text...)
+func (rb *RuneBuffer) pushKill(s []rune) {
+	rb.lastKill = Copy(s)
 }
 
 func (rb *RuneBuffer) Clear() {
