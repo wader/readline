@@ -101,14 +101,14 @@ func (t *Terminal) StdinWriter() io.Writer {
 	return t.stdinWriter
 }
 
-func (t *Terminal) Write(b []byte) (int, error) {
-	return t.config.Stdout.Write(b)
+func (t *Terminal) Write(p []byte) (int, error) {
+	return t.config.Stdout.Write(p)
 }
 
 // WriteStdin prefill the next Stdin fetch
 // Next time you call ReadLine() this value will be writen before the user input
-func (t *Terminal) WriteStdin(b []byte) (int, error) {
-	return t.stdinWriter.Write(b)
+func (t *Terminal) WriteStdin(p []byte) (int, error) {
+	return t.stdinWriter.Write(p)
 }
 
 func (t *Terminal) EnterRawMode() error {
@@ -213,6 +213,10 @@ func (t *Terminal) ReadLine() (string, error) {
 
 func (t *Terminal) ReadLineContext(ctx context.Context) (string, error) {
 	return t.ReadLineContext(ctx)
+}
+
+func (t *Terminal) write(p []byte) {
+	_, _ = t.Write(p)
 }
 
 func (t *Terminal) ioloop() {
@@ -357,27 +361,28 @@ func (t *Terminal) ioloop() {
 
 func (t *Terminal) escape(escKeyPair *escapeKeyPair) bool {
 	switch escKeyPair.Char {
+	case CharBackspace, CharBackspaceEx:
+		t.opKillWordFront()
+
 	case CharTranspose:
 		t.opTranspose()
 
 	case CharEscape:
 
-	case CharBackspaceEx:
-		t.opKillWordFront()
-
 	case 'O', '[':
 		return t.escapeEx(escKeyPair)
 
 	case 'b':
-		t.opBackward()
+		t.opBackwardWord()
 
 	case 'd':
-		t.opDelete()
+		t.opKillWord()
 
 	case 'f':
-		t.opForward()
+		t.opForwardWord()
 
 	default:
+		t.opBell()
 
 	}
 
@@ -412,8 +417,7 @@ func (t *Terminal) escapeEx(escKeyPair *escapeKeyPair) bool {
 			case 'D':
 				t.opBackward()
 
-			case 'E':
-				//
+			//case 'E':
 
 			case 'F':
 				t.opLineEnd()
@@ -421,7 +425,12 @@ func (t *Terminal) escapeEx(escKeyPair *escapeKeyPair) bool {
 			case 'H':
 				t.opLineStart()
 
+			default:
+				t.opBell()
+
 			}
+		} else {
+			t.opBell()
 		}
 
 	}
@@ -456,13 +465,20 @@ func (t *Terminal) escapeTilda(escKeyPair *escapeKeyPair) {
 		case 8:
 			t.opLineEnd()
 
+		default:
+			t.opBell()
+
 		}
+	} else {
+		t.opBell()
 	}
 }
 
 func (t *Terminal) escapeR(escKeyPair *escapeKeyPair) {
 	if escKeyPair.Attribute >= 0 && escKeyPair.Attribute2 >= 0 {
 		t.screenSizeChanged(escKeyPair.Attribute2, escKeyPair.Attribute)
+	} else {
+		t.opBell()
 	}
 }
 
@@ -502,7 +518,7 @@ func (t *Terminal) opForward() {
 }
 
 func (t *Terminal) opBell() {
-
+	t.write([]byte{CharBell})
 }
 
 func (t *Terminal) opBackspace() {
@@ -556,11 +572,22 @@ func (t *Terminal) opKillFront() {
 	t.rb.KillFront()
 }
 
+func (t *Terminal) opKillWord() {
+	t.rb.KillWord()
+}
+
 func (t *Terminal) opKillWordFront() {
 	t.rb.KillWordFront()
 }
 
-
 func (t *Terminal) opYank() {
 	t.rb.Yank()
+}
+
+func (t *Terminal) opBackwardWord() {
+	t.rb.MoveToPrevWord()
+}
+
+func (t *Terminal) opForwardWord() {
+	t.rb.MoveToNextWord()
 }
