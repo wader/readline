@@ -31,14 +31,12 @@ type RuneBuffer struct {
 func NewRuneBuffer(w io.Writer, prompt string, mask rune, interactive bool, screenWidth int) (*RuneBuffer, error) {
 	var err error
 	rb := &RuneBuffer{
-		w:           w,
-		mask:        mask,
-		interactive: interactive,
-		screenWidth: screenWidth,
+		w: w,
 	}
 
 	rb.setPrompt(prompt)
-
+	rb.setMask(mask)
+	rb.setInteractive(interactive)
 	err = rb.setScreenWidth(screenWidth)
 	if err != nil {
 		return nil, err
@@ -48,9 +46,9 @@ func NewRuneBuffer(w io.Writer, prompt string, mask rune, interactive bool, scre
 }
 
 func (rb *RuneBuffer) SetPrompt(prompt string) {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	rb.setPrompt(prompt)
+	rb.Refresh(func() {
+		rb.setPrompt(prompt)
+	})
 }
 
 func (rb *RuneBuffer) setPrompt(prompt string) {
@@ -59,21 +57,32 @@ func (rb *RuneBuffer) setPrompt(prompt string) {
 }
 
 func (rb *RuneBuffer) SetMask(mask rune) {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
+	rb.Refresh(func() {
+		rb.setMask(mask)
+	})
+}
+
+func (rb *RuneBuffer) setMask(mask rune) {
 	rb.mask = mask
 }
 
 func (rb *RuneBuffer) SetInteractive(on bool) {
 	rb.mu.Lock()
-	defer rb.mu.Unlock()
+	rb.setInteractive(on)
+	rb.mu.Unlock()
+	rb.Refresh(nil)
+}
+
+func (rb *RuneBuffer) setInteractive(on bool) {
 	rb.interactive = on
 }
 
 func (rb *RuneBuffer) SetScreenWidth(screenWidth int) error {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	return rb.setScreenWidth(screenWidth)
+	var err error
+	rb.Refresh(func() {
+		err = rb.setScreenWidth(screenWidth)
+	})
+	return err
 }
 
 func (rb *RuneBuffer) setScreenWidth(screenWidth int) error {
@@ -308,7 +317,7 @@ func (rb *RuneBuffer) getBackspaceSequence() []byte {
 	for idx := len(rb.buf); idx > rb.idx; idx-- {
 		if sep[idx] {
 			// up one line, go to the start of the line and move cursor right to the end (rb.screenWidth)
-			buf = append(buf, "\033[A\r"+"\033["+strconv.Itoa(rb.screenWidth)+"C"...)
+			buf = append(buf, "\033[A"+"\r"+"\033["+strconv.Itoa(rb.screenWidth)+"C"...)
 			continue
 		}
 		// move input to the left of one
@@ -446,41 +455,48 @@ func (rb *RuneBuffer) InsertRune(r rune) {
 	rb.InsertRunes([]rune{r})
 }
 
-func (rb *RuneBuffer) MoveToLineStart() {
+func (rb *RuneBuffer) MoveToLineStart() (success bool) {
 	rb.Refresh(func() {
 		if rb.idx == 0 {
 			return
 		}
 		rb.idx = 0
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) MoveToLineEnd() {
+func (rb *RuneBuffer) MoveToLineEnd() (success bool) {
 	rb.Refresh(func() {
 		if rb.idx == len(rb.buf) {
 			return
 		}
-
 		rb.idx = len(rb.buf)
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) MoveBackward() {
+func (rb *RuneBuffer) MoveBackward() (success bool) {
 	rb.Refresh(func() {
 		if rb.idx == 0 {
 			return
 		}
 		rb.idx--
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) MoveForward() {
+func (rb *RuneBuffer) MoveForward() (success bool) {
 	rb.Refresh(func() {
 		if rb.idx == len(rb.buf) {
 			return
 		}
 		rb.idx++
+		success = true
 	})
+	return
 }
 
 func (rb *RuneBuffer) MoveToPrevWord() (success bool) {
@@ -574,43 +590,48 @@ func (rb *RuneBuffer) MoveTo(ch rune, prevChar, reverse bool) (success bool) {
 	return
 }
 
-func (rb *RuneBuffer) Backspace() {
+func (rb *RuneBuffer) Backspace() (success bool) {
 	rb.Refresh(func() {
 		if rb.idx == 0 {
 			return
 		}
-
 		rb.idx--
 		rb.buf = append(rb.buf[:rb.idx], rb.buf[rb.idx+1:]...)
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) Transpose() {
+func (rb *RuneBuffer) Transpose() (success bool) {
 	rb.Refresh(func() {
-		if len(rb.buf) == 1 {
-			rb.idx++
-		}
-
-		if len(rb.buf) < 2 {
+		if len(rb.buf) <= 1 {
 			return
 		}
 
 		if rb.idx == 0 {
-			rb.idx = 1
+			//rb.idx = 1
+			return
 		} else if rb.idx >= len(rb.buf) {
 			rb.idx = len(rb.buf) - 1
 		}
 		rb.buf[rb.idx], rb.buf[rb.idx-1] = rb.buf[rb.idx-1], rb.buf[rb.idx]
 		rb.idx++
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) Erase() {
+func (rb *RuneBuffer) Erase() (success bool) {
 	rb.Refresh(func() {
+		if len(rb.buf) == 0 {
+			return
+		}
 		rb.idx = 0
 		rb.pushKill(rb.buf[:])
 		rb.buf = rb.buf[:0]
+		success = true
 	})
+	return
 }
 
 func (rb *RuneBuffer) Delete() (success bool) {
@@ -625,27 +646,31 @@ func (rb *RuneBuffer) Delete() (success bool) {
 	return
 }
 
-func (rb *RuneBuffer) KillWord() {
-	if rb.idx == len(rb.buf) {
-		return
-	}
-	init := rb.idx
-	for init < len(rb.buf) && IsWordBreak(rb.buf[init]) {
-		init++
-	}
-	for i := init + 1; i < len(rb.buf); i++ {
-		if !IsWordBreak(rb.buf[i]) && IsWordBreak(rb.buf[i-1]) {
-			rb.pushKill(rb.buf[rb.idx : i-1])
-			rb.Refresh(func() {
-				rb.buf = append(rb.buf[:rb.idx], rb.buf[i-1:]...)
-			})
+func (rb *RuneBuffer) KillWord() (success bool) {
+	rb.Refresh(func() {
+		if rb.idx == len(rb.buf) {
 			return
 		}
-	}
-	rb.Kill()
+		init := rb.idx
+		for init < len(rb.buf) && IsWordBreak(rb.buf[init]) {
+			init++
+		}
+		for i := init + 1; i < len(rb.buf); i++ {
+			if !IsWordBreak(rb.buf[i]) && IsWordBreak(rb.buf[i-1]) {
+				rb.pushKill(rb.buf[rb.idx : i-1])
+				rb.buf = append(rb.buf[:rb.idx], rb.buf[i-1:]...)
+				success = true
+				return
+			}
+		}
+		rb.pushKill(rb.buf[rb.idx:])
+		rb.buf = rb.buf[:rb.idx]
+		success = true
+	})
+	return
 }
 
-func (rb *RuneBuffer) KillWordFront() {
+func (rb *RuneBuffer) KillWordFront() (success bool) {
 	rb.Refresh(func() {
 		if rb.idx == 0 {
 			return
@@ -655,37 +680,46 @@ func (rb *RuneBuffer) KillWordFront() {
 				rb.pushKill(rb.buf[i:rb.idx])
 				rb.buf = append(rb.buf[:i], rb.buf[rb.idx:]...)
 				rb.idx = i
+				success = true
 				return
 			}
 		}
 
 		rb.buf = rb.buf[:0]
 		rb.idx = 0
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) Kill() {
+func (rb *RuneBuffer) Kill() (success bool) {
 	rb.Refresh(func() {
+		if rb.idx == len(rb.buf) {
+			return
+		}
 		rb.pushKill(rb.buf[rb.idx:])
 		rb.buf = rb.buf[:rb.idx]
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) KillFront() {
+func (rb *RuneBuffer) KillFront() (success bool) {
 	rb.Refresh(func() {
 		if rb.idx == 0 {
 			return
 		}
-
 		length := len(rb.buf) - rb.idx
 		rb.pushKill(rb.buf[:rb.idx])
 		copy(rb.buf[:length], rb.buf[rb.idx:])
 		rb.idx = 0
 		rb.buf = rb.buf[:length]
+		success = true
 	})
+	return
 }
 
-func (rb *RuneBuffer) Yank() {
+func (rb *RuneBuffer) Yank() (success bool) {
 	if len(rb.lastKill) == 0 {
 		return
 	}
@@ -696,7 +730,9 @@ func (rb *RuneBuffer) Yank() {
 		buf = append(buf, rb.buf[rb.idx:]...)
 		rb.buf = buf
 		rb.idx += len(rb.lastKill)
+		success = true
 	})
+	return
 }
 
 func (rb *RuneBuffer) pushKill(s []rune) {
