@@ -212,11 +212,7 @@ func (t *Terminal) ReadLine() (string, error) {
 }
 
 func (t *Terminal) ReadLineContext(ctx context.Context) (string, error) {
-	return t.ReadLineContext(ctx)
-}
-
-func (t *Terminal) write(p []byte) {
-	_, _ = t.Write(p)
+	return t.ReadStringContext(ctx)
 }
 
 func (t *Terminal) ioloop() {
@@ -300,7 +296,7 @@ func (t *Terminal) ioloop() {
 			t.opForward()
 
 		case CharBell:
-			t.opBell()
+			t.bell()
 
 		case CharBackspace, CharBackspaceEx:
 			t.opBackspace()
@@ -382,7 +378,7 @@ func (t *Terminal) escape(escKeyPair *escapeKeyPair) bool {
 		t.opForwardWord()
 
 	default:
-		t.opBell()
+		t.bell()
 
 	}
 
@@ -426,11 +422,11 @@ func (t *Terminal) escapeEx(escKeyPair *escapeKeyPair) bool {
 				t.opLineStart()
 
 			default:
-				t.opBell()
+				t.bell()
 
 			}
 		} else {
-			t.opBell()
+			t.bell()
 		}
 
 	}
@@ -466,11 +462,11 @@ func (t *Terminal) escapeTilda(escKeyPair *escapeKeyPair) {
 			t.opLineEnd()
 
 		default:
-			t.opBell()
+			t.bell()
 
 		}
 	} else {
-		t.opBell()
+		t.bell()
 	}
 }
 
@@ -478,7 +474,7 @@ func (t *Terminal) escapeR(escKeyPair *escapeKeyPair) {
 	if escKeyPair.Attribute >= 0 && escKeyPair.Attribute2 >= 0 {
 		t.screenSizeChanged(escKeyPair.Attribute2, escKeyPair.Attribute)
 	} else {
-		t.opBell()
+		t.bell()
 	}
 }
 
@@ -497,36 +493,52 @@ func (t *Terminal) screenSizeChanged(width, height int) {
 	_ = t.rb.SetScreenWidth(width)
 }
 
-func (t *Terminal) opLineStart() {
-	t.rb.MoveToLineStart()
+func (t *Terminal) write(p []byte) {
+	_, _ = t.Write(p)
 }
 
-func (t *Terminal) opBackward() {
-	t.rb.MoveBackward()
-}
-
-func (t *Terminal) opDelete() {
-	t.rb.Delete()
-}
-
-func (t *Terminal) opLineEnd() {
-	t.rb.MoveToLineEnd()
-}
-
-func (t *Terminal) opForward() {
-	t.rb.MoveForward()
-}
-
-func (t *Terminal) opBell() {
+func (t *Terminal) bell() {
 	t.write([]byte{CharBell})
 }
 
+func (t *Terminal) opLineStart() {
+	if !t.rb.MoveToLineStart() {
+		t.bell()
+	}
+}
+
+func (t *Terminal) opBackward() {
+	if !t.rb.MoveBackward() {
+		t.bell()
+	}
+}
+
+func (t *Terminal) opDelete() {
+	if !t.rb.Delete() {
+		t.bell()
+	}
+}
+
+func (t *Terminal) opLineEnd() {
+	if !t.rb.MoveToLineEnd() {
+		t.bell()
+	}
+}
+
+func (t *Terminal) opForward() {
+	if !t.rb.MoveForward() {
+		t.bell()
+	}
+}
+
 func (t *Terminal) opBackspace() {
-	t.rb.Backspace()
+	if !t.rb.Backspace() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opTab() {
-
+	t.bell()
 }
 
 func (t *Terminal) opReturn() {
@@ -541,7 +553,9 @@ func (t *Terminal) opReturn() {
 }
 
 func (t *Terminal) opKill() {
-	t.rb.Kill()
+	if !t.rb.Kill() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opClear() {
@@ -565,29 +579,43 @@ func (t *Terminal) opFwdSearch() {
 }
 
 func (t *Terminal) opTranspose() {
-	t.rb.Transpose()
+	if !t.rb.Transpose() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opKillFront() {
-	t.rb.KillFront()
+	if !t.rb.KillFront() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opKillWord() {
-	t.rb.KillWord()
+	if !t.rb.KillWord() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opKillWordFront() {
-	t.rb.KillWordFront()
+	if !t.rb.KillWordFront() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opYank() {
-	t.rb.Yank()
+	if !t.rb.Yank() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opBackwardWord() {
-	t.rb.MoveToPrevWord()
+	if !t.rb.MoveToPrevWord() {
+		t.bell()
+	}
 }
 
 func (t *Terminal) opForwardWord() {
-	t.rb.MoveToNextWord()
+	if !t.rb.MoveToNextWord() {
+		t.bell()
+	}
 }
