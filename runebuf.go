@@ -36,7 +36,7 @@ type RuneBuffer struct {
 	sync.Mutex
 }
 
-func (r* RuneBuffer) pushKill(text []rune) {
+func (r *RuneBuffer) pushKill(text []rune) {
 	r.lastKill = append([]rune{}, text...)
 }
 
@@ -244,7 +244,7 @@ func (r *RuneBuffer) DeleteWord() {
 	}
 	for i := init + 1; i < len(r.buf); i++ {
 		if !IsWordBreak(r.buf[i]) && IsWordBreak(r.buf[i-1]) {
-			r.pushKill(r.buf[r.idx:i-1])
+			r.pushKill(r.buf[r.idx : i-1])
 			r.Refresh(func() {
 				r.buf = append(r.buf[:r.idx], r.buf[i-1:]...)
 			})
@@ -354,8 +354,8 @@ func (r *RuneBuffer) BackEscapeWord() {
 		if r.idx == 0 {
 			return
 		}
-		for i := r.idx - 1; i > 0; i-- {
-			if !IsWordBreak(r.buf[i]) && IsWordBreak(r.buf[i-1]) {
+		for i := r.idx - 1; i >= 0; i-- {
+			if i == 0 || (IsWordBreak(r.buf[i-1])) && !IsWordBreak(r.buf[i]) {
 				r.pushKill(r.buf[i:r.idx])
 				r.buf = append(r.buf[:i], r.buf[r.idx:]...)
 				r.idx = i
@@ -373,7 +373,7 @@ func (r *RuneBuffer) Yank() {
 		return
 	}
 	r.Refresh(func() {
-		buf := make([]rune, 0, len(r.buf) + len(r.lastKill))
+		buf := make([]rune, 0, len(r.buf)+len(r.lastKill))
 		buf = append(buf, r.buf[:r.idx]...)
 		buf = append(buf, r.lastKill...)
 		buf = append(buf, r.buf[r.idx:]...)
