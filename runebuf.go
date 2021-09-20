@@ -28,10 +28,13 @@ type RuneBuffer struct {
 
 	bck *runeBufferBck
 
-	offset string          // is offset useful? scrolling means row varies
-	ppos   int             // prompt start position (0 == column 1)
+	offset string // is offset useful? scrolling means row varies
+	ppos   int    // prompt start position (0 == column 1)
 
 	lastKill []rune
+
+	lastChangeIdx int
+	OnChange      func(pos int, buf []rune)
 
 	sync.Mutex
 }
@@ -444,7 +447,7 @@ func (r *RuneBuffer) isInLineEdge() bool {
 		return false
 	}
 	sp := r.getSplitByLine(r.buf, 1)
-	return len(sp[len(sp)-1]) == 0  // last line is 0 len
+	return len(sp[len(sp)-1]) == 0 // last line is 0 len
 }
 
 func (r *RuneBuffer) getSplitByLine(rs []rune, nextWidth int) [][]rune {
@@ -486,6 +489,9 @@ func (r *RuneBuffer) Refresh(f func()) {
 }
 
 func (r *RuneBuffer) refresh(f func()) {
+	prevIdx := r.idx
+	prevBuf := append([]rune{}, r.buf...)
+
 	if !r.interactive {
 		if f != nil {
 			f()
@@ -498,12 +504,23 @@ func (r *RuneBuffer) refresh(f func()) {
 		f()
 	}
 	r.print()
+
+	if r.OnChange != nil {
+		if !runes.Equal(r.buf, prevBuf) {
+			if prevIdx != r.lastChangeIdx+1 {
+				r.OnChange(prevIdx, prevBuf)
+			}
+
+			r.lastChangeIdx = prevIdx
+		}
+	}
+
 }
 
 // getAndSetOffset queries the terminal for the current cursor position by
 // writing a control sequence to the terminal. This call is asynchronous
 // and it returns before any offset has actually been set as the terminal
-// will write the offset back to us via stdin and there may already be 
+// will write the offset back to us via stdin and there may already be
 // other data in the stdin buffer ahead of it.
 // This function is called at the start of readline each time.
 func (r *RuneBuffer) getAndSetOffset(t *Terminal) {
@@ -528,8 +545,8 @@ func (r *RuneBuffer) SetOffset(offset string) {
 
 func (r *RuneBuffer) setOffset(offset string) {
 	r.offset = offset
-	if _, c, ok := (&escapeKeyPair{attr:offset}).Get2(); ok && c > 0 && c < r.width {
-		r.ppos = c - 1  // c should be 1..width
+	if _, c, ok := (&escapeKeyPair{attr: offset}).Get2(); ok && c > 0 && c < r.width {
+		r.ppos = c - 1 // c should be 1..width
 	} else {
 		r.ppos = 0
 	}
@@ -614,7 +631,7 @@ func (r *RuneBuffer) output() []byte {
 }
 
 func (r *RuneBuffer) getBackspaceSequence() []byte {
-	bcnt := len(r.buf) - r.idx  // backwards count to index
+	bcnt := len(r.buf) - r.idx // backwards count to index
 	sp := r.getSplitByLine(r.buf, 1)
 
 	// Calculate how many lines up to the index line
@@ -710,8 +727,8 @@ func (r *RuneBuffer) cleanOutput(w io.Writer, idxLine int) {
 		if idxLine > 0 {
 			fmt.Fprintf(buf, "\033[%dA", idxLine) // move cursor up by idxLine
 		}
-		fmt.Fprintf(buf, "\033[%dG", r.ppos + 1) // move cursor back to initial ppos position
-		buf.Write([]byte("\033[J"))  // clear from cursor to end of screen
+		fmt.Fprintf(buf, "\033[%dG", r.ppos+1) // move cursor back to initial ppos position
+		buf.Write([]byte("\033[J"))            // clear from cursor to end of screen
 	}
 	buf.Flush()
 	return
