@@ -22,8 +22,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/chzyer/readline"
 	zxcvbn "github.com/nbutton23/zxcvbn-go"
+	"github.com/wader/readline"
 )
 
 const (
