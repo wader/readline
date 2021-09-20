@@ -32,6 +32,9 @@ type RuneBuffer struct {
 
 	lastKill []rune
 
+	lastChangeIdx int
+	OnChange      func(pos int, buf []rune)
+
 	sync.Mutex
 }
 
@@ -451,6 +454,9 @@ func (r *RuneBuffer) Refresh(f func()) {
 	r.Lock()
 	defer r.Unlock()
 
+	prevIdx := r.idx
+	prevBuf := append([]rune{}, r.buf...)
+
 	if !r.interactive {
 		if f != nil {
 			f()
@@ -463,6 +469,17 @@ func (r *RuneBuffer) Refresh(f func()) {
 		f()
 	}
 	r.print()
+
+	if r.OnChange != nil {
+		if !runes.Equal(r.buf, prevBuf) {
+			if prevIdx != r.lastChangeIdx+1 {
+				r.OnChange(prevIdx, prevBuf)
+			}
+
+			r.lastChangeIdx = prevIdx
+		}
+	}
+
 }
 
 func (r *RuneBuffer) SetOffset(offset string) {
