@@ -43,6 +43,7 @@ const (
 	CharCtrlW     = 23
 	CharCtrlY     = 25
 	CharCtrlZ     = 26
+	CharCtrl_     = 31
 	CharEsc       = 27
 	CharO         = 79
 	CharEscapeEx  = 91

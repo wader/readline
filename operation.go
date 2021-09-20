@@ -32,13 +32,14 @@ type Operation struct {
 	wrapOut atomic.Pointer[wrapWriter]
 	wrapErr atomic.Pointer[wrapWriter]
 
-	isPrompting bool       // true when prompt written and waiting for input
+	isPrompting bool // true when prompt written and waiting for input
 
-	history *opHistory
-	search  *opSearch
+	history   *opHistory
+	search    *opSearch
 	completer *opCompleter
-	password *opPassword
-	vim *opVim
+	password  *opPassword
+	vim       *opVim
+	undo      *opUndo
 }
 
 func (o *Operation) SetBuffer(what string) {
@@ -101,6 +102,8 @@ func NewOperation(t *Terminal, cfg *Config) *Operation {
 	op.completer = newOpCompleter(op.buf.w, op)
 	op.password = newOpPassword(op)
 	op.cfg.FuncOnWidthChanged(t.OnSizeChange)
+	op.undo = newOpUndo(op)
+	op.buf.OnChange = op.undo.add
 	go op.ioloop()
 	return op
 }
@@ -266,6 +269,8 @@ func (o *Operation) ioloop() {
 			o.buf.BackEscapeWord()
 		case CharCtrlY:
 			o.buf.Yank()
+		case CharCtrl_:
+			o.undo.undo()
 		case CharEnter, CharCtrlJ:
 			if o.search.IsSearchMode() {
 				o.search.ExitSearchMode(false)
@@ -291,6 +296,7 @@ func (o *Operation) ioloop() {
 			} else {
 				isUpdateHistory = false
 			}
+			o.undo.init()
 		case CharBackward:
 			o.buf.MoveBackward()
 		case CharForward:
@@ -299,6 +305,7 @@ func (o *Operation) ioloop() {
 			buf := o.history.Prev()
 			if buf != nil {
 				o.buf.Set(buf)
+				o.undo.init()
 			} else {
 				o.t.Bell()
 			}
@@ -306,6 +313,7 @@ func (o *Operation) ioloop() {
 			buf, ok := o.history.Next()
 			if ok {
 				o.buf.Set(buf)
+				o.undo.init()
 			} else {
 				o.t.Bell()
 			}
@@ -383,10 +391,12 @@ func (o *Operation) ioloop() {
 		if !keepInSearchMode && o.search.IsSearchMode() {
 			o.search.ExitSearchMode(false)
 			o.buf.Refresh(nil)
+			o.undo.init()
 		} else if o.completer.IsInCompleteMode() {
 			if !keepInCompleteMode {
 				o.completer.ExitCompleteMode(false)
 				o.refresh()
+				o.undo.init()
 			} else {
 				o.buf.Refresh(nil)
 				o.completer.CompleteRefresh()
