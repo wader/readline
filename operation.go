@@ -32,6 +32,7 @@ type Operation struct {
 	*opCompleter
 	*opPassword
 	*opVim
+	*opUndo
 }
 
 func (o *Operation) SetBuffer(what string) {
@@ -85,6 +86,8 @@ func NewOperation(t *Terminal, cfg *Config) *Operation {
 		op.opSearch.OnSizeChange(newWidth, newHeight)
 		op.buf.OnSizeChange(newWidth, newHeight)
 	})
+	op.opUndo = newOpUndo(op)
+	op.buf.OnChange = op.opUndo.add
 	go op.ioloop()
 	return op
 }
@@ -248,6 +251,8 @@ func (o *Operation) ioloop() {
 			o.buf.BackEscapeWord()
 		case CharCtrlY:
 			o.buf.Yank()
+		case CharCtrl_:
+			o.opUndo.undo()
 		case CharEnter, CharCtrlJ:
 			if o.IsSearchMode() {
 				o.ExitSearchMode(false)
@@ -273,6 +278,7 @@ func (o *Operation) ioloop() {
 			} else {
 				isUpdateHistory = false
 			}
+			o.opUndo.init()
 		case CharBackward:
 			o.buf.MoveBackward()
 		case CharForward:
@@ -281,6 +287,7 @@ func (o *Operation) ioloop() {
 			buf := o.history.Prev()
 			if buf != nil {
 				o.buf.Set(buf)
+				o.opUndo.init()
 			} else {
 				o.t.Bell()
 			}
@@ -288,6 +295,7 @@ func (o *Operation) ioloop() {
 			buf, ok := o.history.Next()
 			if ok {
 				o.buf.Set(buf)
+				o.opUndo.init()
 			} else {
 				o.t.Bell()
 			}
@@ -373,10 +381,12 @@ func (o *Operation) ioloop() {
 		o.m.Lock()
 		if !keepInSearchMode && o.IsSearchMode() {
 			o.ExitSearchMode(false)
+			o.opUndo.init()
 			o.buf.Refresh(nil)
 		} else if o.IsInCompleteMode() {
 			if !keepInCompleteMode {
 				o.ExitCompleteMode(false)
+				o.opUndo.init()
 				o.Refresh()
 			} else {
 				o.buf.Refresh(nil)
