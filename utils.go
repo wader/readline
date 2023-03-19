@@ -24,7 +24,7 @@ const (
 	CharLineStart = 1
 	CharBackward  = 2
 	CharInterrupt = 3
-	CharDelete    = 4
+	CharEOT       = 4
 	CharLineEnd   = 5
 	CharForward   = 6
 	CharBell      = 7
@@ -49,12 +49,14 @@ const (
 	CharBackspace = 127
 )
 
+// Extra virtual keys
 const (
 	MetaBackward rune = -iota - 1
 	MetaForward
 	MetaDelete
 	MetaBackspace
 	MetaTranspose
+	CharDelete
 )
 
 // WaitForResume need to call before current process got suspend.
